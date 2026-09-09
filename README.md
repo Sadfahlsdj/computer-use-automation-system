@@ -43,14 +43,16 @@ cua replay evidence/capabilities/member-read-savings.yaml --input member_id=9999
 Run genuine LLM-driven discovery:
 
 ```bash
-export OPENAI_API_KEY='your-key'
+export OPENROUTER_API_KEY='your-key'
 cua discover \
+  --provider openrouter \
+  --model nex-agi/nex-n2.5-pro:free \
   --goal 'Look up member 10001 and return the savings balance and member status' \
   --input member_id=10001 \
   --output evidence/capabilities/discovered.yaml
 ```
 
-Discovery refuses to start without `OPENAI_API_KEY`; there is no scripted provider presented as real evidence. Set `--model` if the default model is unavailable to your account.
+Discovery refuses to start without an OpenRouter key. Prefer `OPENROUTER_API_KEY` so the key is not stored in shell history; `--api-key` is also supported. OpenRouter model IDs include their model provider, for example `nex-agi/nex-n2.5-pro:free`. Set `--model openrouter/free` to let OpenRouter select an available free model that supports the request, although pinning a model makes evidence runs more repeatable.
 
 To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
 
@@ -77,7 +79,7 @@ pytest
 
 ## Important limitations
 
-- The repository includes a real OpenAI discovery adapter, but a genuine discovery artifact must be generated with the submitter's API key.
+- The repository includes a real OpenRouter discovery adapter, but a genuine discovery artifact must be generated with the submitter's API key.
 - Browser sessions are in process and intentionally non-durable.
 - The operator console uses screenshot polling rather than video streaming.
 - Desktop adapters and tenant infrastructure are design seams, not implementations.

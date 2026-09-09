@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 
 from computer_use.artifacts import load_artifact, save_artifact
 from computer_use.browser import launch_browser
-from computer_use.discovery import DiscoveryEngine, OpenAIDecisionProvider
+from computer_use.discovery import DiscoveryEngine, OpenRouterDecisionProvider
 from computer_use.evidence import EvidenceRecorder
 from computer_use.models import PolicyConfig
 from computer_use.policy import PolicyEngine
@@ -20,6 +20,7 @@ from computer_use.surface import PlaywrightSurface
 
 app = typer.Typer(no_args_is_help=True)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DISCOVERY_MODEL = "nex-agi/nex-n2.5-pro:free"
 
 
 def _parse_inputs(values: list[str]) -> dict[str, str]:
@@ -75,11 +76,22 @@ async def _discover(
     goal: str,
     inputs: dict[str, str],
     output: Path,
+    provider: str,
     model: str,
+    api_key: str | None,
     headed: bool,
 ) -> None:
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise typer.BadParameter("OPENAI_API_KEY is required for a genuine discovery run")
+    if provider.casefold() != "openrouter":
+        raise typer.BadParameter(
+            f"Unsupported discovery provider {provider!r}; the supported provider is 'openrouter'",
+            param_hint="--provider",
+        )
+    resolved_api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+    if not resolved_api_key:
+        raise typer.BadParameter(
+            "Set OPENROUTER_API_KEY or pass --api-key for a genuine discovery run",
+            param_hint="--api-key",
+        )
     evidence = EvidenceRecorder(PROJECT_ROOT / "evidence", list(inputs.values()))
     async with async_playwright() as playwright:
         browser = await launch_browser(playwright, headless=not headed)
@@ -90,7 +102,7 @@ async def _discover(
             PlaywrightSurface(page),
             _policy(),
             evidence,
-            OpenAIDecisionProvider(model),
+            OpenRouterDecisionProvider(model, resolved_api_key),
         )
         artifact = await engine.run(
             goal,
@@ -110,11 +122,28 @@ def discover(
     goal: str = typer.Option(..., "--goal"),
     input: list[str] = typer.Option([], "--input", "-i"),
     output: Path = typer.Option(Path("evidence/capabilities/discovered.yaml"), "--output"),
-    model: str = typer.Option("gpt-4.1-mini", "--model"),
+    provider: str = typer.Option("openrouter", "--provider"),
+    model: str = typer.Option(DEFAULT_DISCOVERY_MODEL, "--model"),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        envvar="OPENROUTER_API_KEY",
+        help="OpenRouter API key (prefer the OPENROUTER_API_KEY environment variable)",
+    ),
     headed: bool = typer.Option(False, "--headed"),
 ) -> None:
     """Run genuine LLM-guided discovery and save the resulting artifact."""
-    asyncio.run(_discover(goal, _parse_inputs(input), output.resolve(), model, headed))
+    asyncio.run(
+        _discover(
+            goal,
+            _parse_inputs(input),
+            output.resolve(),
+            provider,
+            model,
+            api_key,
+            headed,
+        )
+    )
 
 
 if __name__ == "__main__":

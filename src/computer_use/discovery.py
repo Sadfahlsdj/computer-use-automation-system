@@ -36,9 +36,13 @@ The goal is complete only after requested values have been extracted and the suc
 Return only JSON matching the provided schema."""
 
 
-class OpenAIDecisionProvider:
-    def __init__(self, model: str) -> None:
-        self.client = AsyncOpenAI()
+class OpenRouterDecisionProvider:
+    def __init__(self, model: str, api_key: str) -> None:
+        self.client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            default_headers={"X-Title": "Computer-Use Automation System"},
+        )
         self.model = model
 
     async def decide(self, goal: str, observation: dict[str, Any]) -> DiscoveryDecision:
