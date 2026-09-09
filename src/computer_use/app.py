@@ -71,8 +71,15 @@ async def start_handoff() -> dict[str, str]:
 async def handoff_state(session_id: str) -> dict[str, object]:
     try:
         return await handoffs.state(session_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="Unknown session") from error
+    except KeyError:
+        return {
+            "id": "",
+            "owner": "closed",
+            "reason": "This handoff session expired when the server restarted.",
+            "url": "",
+            "screenshot": "",
+            "events": [],
+        }
 
 
 @app.post("/api/handoffs/{session_id}/click")

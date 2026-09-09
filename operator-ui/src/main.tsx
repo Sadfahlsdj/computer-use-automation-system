@@ -22,8 +22,19 @@ function App() {
   async function refresh(id = session?.id) {
     if (!id) return;
     const response = await fetch(`/api/handoffs/${id}`);
+    if (response.status === 404) {
+      setSession((current) => current?.id === id ? null : current);
+      setError("The previous handoff session expired when the server restarted.");
+      return;
+    }
     if (!response.ok) throw new Error(await response.text());
-    setSession(await response.json());
+    const nextSession: Session = await response.json();
+    if (!nextSession.id || nextSession.owner === "closed") {
+      setSession(null);
+      setError(nextSession.reason || "The previous handoff session expired.");
+      return;
+    }
+    setSession(nextSession);
   }
 
   async function start() {
@@ -93,10 +104,29 @@ function App() {
   }
 
   useEffect(() => {
-    if (!session?.id) return;
-    const timer = window.setInterval(() => void refresh(session.id), 1500);
-    return () => window.clearInterval(timer);
-  }, [session?.id]);
+    if (!session?.id || session.owner !== "human") return;
+    const sessionId = session.id;
+    let timer: number | undefined;
+
+    const poll = () => {
+      void refresh(sessionId).catch((caught) => setError(String(caught)));
+    };
+    const updatePolling = () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState === "visible") {
+        poll();
+        timer = window.setInterval(poll, 1500);
+      }
+    };
+
+    updatePolling();
+    document.addEventListener("visibilitychange", updatePolling);
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", updatePolling);
+    };
+  }, [session?.id, session?.owner]);
 
   return (
     <main>

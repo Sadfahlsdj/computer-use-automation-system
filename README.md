@@ -54,9 +54,12 @@ Discovery refuses to start without `OPENAI_API_KEY`; there is no scripted provid
 
 To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
 
+The console polls only while a human-owned session is visible. Background tabs pause polling and returning control stops it. After a server restart, an unknown session returns a closed-session tombstone with an empty ID so both current and previously loaded frontends discard the stale ID and stop polling after one request.
+
 ## Evidence
 
-Every run creates `evidence/runs/<evidence-id>/` containing:
+Every run creates a UTC timestamped directory such as
+`evidence/runs/2026-09-09T18-42-31.123456Z/` containing:
 
 - `events.jsonl`, with invocation values redacted;
 - a final screenshot for replay;
