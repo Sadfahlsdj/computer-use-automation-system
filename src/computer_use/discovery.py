@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
+from computer_use.errors import TargetNotFound
 from computer_use.evidence import EvidenceRecorder
 from computer_use.models import (
     CapabilityArtifact,
@@ -222,36 +223,54 @@ class DiscoveryEngine:
                 )
             if decision.kind == "escalate":
                 raise RuntimeError(f"Discovery requested human intervention: {decision.reason}")
-            if decision.kind == "navigate" and decision.url:
-                step = NavigateStep(id=step_id, url=decision.url)
-                self.policy.check_step(step, self.surface.url)
-                logger.info("Applying navigate action")
-                await self.surface.navigate(step.url, step.timeout_ms)
-            elif decision.kind == "fill" and decision.target and decision.value is not None:
-                value = decision.value
-                template = value
-                for name, supplied in inputs.items():
-                    if value == supplied:
-                        template = f"{{{{ inputs.{name} }}}}"
-                step = FillStep(id=step_id, target=decision.target, value=template, sensitive=True)
-                self.policy.check_step(step, self.surface.url)
-                logger.info("Applying fill action (value hidden)")
-                await self.surface.fill(step.target, value, step.timeout_ms)
-            elif decision.kind == "click" and decision.target:
-                step = ClickStep(id=step_id, target=decision.target)
-                self.policy.check_step(step, self.surface.url)
-                logger.info("Applying click action")
-                await self.surface.click(step.target, step.timeout_ms)
-            elif decision.kind == "extract" and decision.target and decision.output:
-                step = ExtractStep(id=step_id, target=decision.target, output=decision.output)
-                self.policy.check_step(step, self.surface.url)
-                logger.info("Applying extract action (output=%s)", decision.output)
-                await self.surface.extract(step.target, step.timeout_ms)
-                outputs[decision.output] = OutputSpec(
-                    type="string", description=f"Discovered output {decision.output}"
+            try:
+                if decision.kind == "navigate" and decision.url:
+                    step = NavigateStep(id=step_id, url=decision.url)
+                    self.policy.check_step(step, self.surface.url)
+                    logger.info("Applying navigate action")
+                    await self.surface.navigate(step.url, step.timeout_ms)
+                elif decision.kind == "fill" and decision.target and decision.value is not None:
+                    value = decision.value
+                    template = value
+                    for name, supplied in inputs.items():
+                        if value == supplied:
+                            template = f"{{{{ inputs.{name} }}}}"
+                    step = FillStep(
+                        id=step_id,
+                        target=decision.target,
+                        value=template,
+                        sensitive=True,
+                    )
+                    self.policy.check_step(step, self.surface.url)
+                    logger.info("Applying fill action (value hidden)")
+                    await self.surface.fill(step.target, value, step.timeout_ms)
+                elif decision.kind == "click" and decision.target:
+                    step = ClickStep(id=step_id, target=decision.target)
+                    self.policy.check_step(step, self.surface.url)
+                    logger.info("Applying click action")
+                    await self.surface.click(step.target, step.timeout_ms)
+                elif decision.kind == "extract" and decision.target and decision.output:
+                    step = ExtractStep(id=step_id, target=decision.target, output=decision.output)
+                    self.policy.check_step(step, self.surface.url)
+                    logger.info("Applying extract action (output=%s)", decision.output)
+                    await self.surface.extract(step.target, step.timeout_ms)
+                    outputs[decision.output] = OutputSpec(
+                        type="string", description=f"Discovered output {decision.output}"
+                    )
+                else:
+                    raise RuntimeError(f"Incomplete model decision: {decision.model_dump()}")
+            except TargetNotFound as error:
+                logger.warning(
+                    "Discovery step %d: target disappeared; re-observing the page",
+                    index + 1,
                 )
-            else:
-                raise RuntimeError(f"Incomplete model decision: {decision.model_dump()}")
+                self.evidence.record(
+                    "discovery_stale_target",
+                    index=index,
+                    action=decision.kind,
+                    error=str(error),
+                )
+                continue
             recorded.append(step)
             logger.info("Discovery step %d: action completed", index + 1)
         raise RuntimeError("Discovery reached the maximum step count")

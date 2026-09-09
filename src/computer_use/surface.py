@@ -89,6 +89,10 @@ class PlaywrightSurface:
     async def click(self, target: TargetSpec, timeout_ms: int) -> None:
         locator = await self.resolve(target, timeout_ms)
         await locator.click(timeout=timeout_ms)
+        # A click can start an iframe navigation after Playwright considers the
+        # locator action complete. Give that navigation a chance to commit before
+        # discovery captures the next observation.
+        await self.page.wait_for_timeout(250)
 
     async def extract(self, target: TargetSpec, timeout_ms: int) -> str:
         locator = await self.resolve(target, timeout_ms)
