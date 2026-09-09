@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 import uvicorn
+from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 from computer_use.artifacts import load_artifact, save_artifact
@@ -20,7 +21,9 @@ from computer_use.surface import PlaywrightSurface
 
 app = typer.Typer(no_args_is_help=True)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DISCOVERY_MODEL = "nex-agi/nex-n2.5-pro:free"
+load_dotenv(PROJECT_ROOT / ".env")
+DEFAULT_DISCOVERY_PROVIDER = "nex-agi"
+DEFAULT_DISCOVERY_MODEL = "nex-n2.5-pro:free"
 
 
 def _parse_inputs(values: list[str]) -> dict[str, str]:
@@ -31,6 +34,19 @@ def _parse_inputs(values: list[str]) -> dict[str, str]:
         name, supplied = value.split("=", 1)
         parsed[name] = supplied
     return parsed
+
+
+def _openrouter_model_id(provider: str, model: str) -> str:
+    model = model.strip()
+    if "/" in model:
+        return model
+    provider = provider.strip().strip("/")
+    if not provider or not model:
+        raise typer.BadParameter(
+            "OpenRouter provider and model cannot be empty",
+            param_hint="--provider/--model",
+        )
+    return f"{provider}/{model}"
 
 
 def _policy() -> PolicyEngine:
@@ -81,11 +97,6 @@ async def _discover(
     api_key: str | None,
     headed: bool,
 ) -> None:
-    if provider.casefold() != "openrouter":
-        raise typer.BadParameter(
-            f"Unsupported discovery provider {provider!r}; the supported provider is 'openrouter'",
-            param_hint="--provider",
-        )
     resolved_api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
     if not resolved_api_key:
         raise typer.BadParameter(
@@ -102,7 +113,7 @@ async def _discover(
             PlaywrightSurface(page),
             _policy(),
             evidence,
-            OpenRouterDecisionProvider(model, resolved_api_key),
+            OpenRouterDecisionProvider(_openrouter_model_id(provider, model), resolved_api_key),
         )
         artifact = await engine.run(
             goal,
@@ -122,8 +133,18 @@ def discover(
     goal: str = typer.Option(..., "--goal"),
     input: list[str] = typer.Option([], "--input", "-i"),
     output: Path = typer.Option(Path("evidence/capabilities/discovered.yaml"), "--output"),
-    provider: str = typer.Option("openrouter", "--provider"),
-    model: str = typer.Option(DEFAULT_DISCOVERY_MODEL, "--model"),
+    provider: str = typer.Option(
+        DEFAULT_DISCOVERY_PROVIDER,
+        "--provider",
+        envvar="OPENROUTER_PROVIDER",
+        help="Provider/author namespace in the OpenRouter model ID",
+    ),
+    model: str = typer.Option(
+        DEFAULT_DISCOVERY_MODEL,
+        "--model",
+        envvar="OPENROUTER_MODEL",
+        help="Model slug, or a fully qualified provider/model ID",
+    ),
     api_key: str | None = typer.Option(
         None,
         "--api-key",
