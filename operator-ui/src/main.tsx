@@ -17,6 +17,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const imageRef = useRef<HTMLImageElement>(null);
+  const commandQueue = useRef<Promise<void>>(Promise.resolve());
 
   async function refresh(id = session?.id) {
     if (!id) return;
@@ -42,6 +43,7 @@ function App() {
 
   async function clickScreenshot(event: React.MouseEvent<HTMLImageElement>) {
     if (!session || session.owner !== "human" || !imageRef.current) return;
+    imageRef.current.focus();
     const rect = imageRef.current.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * imageRef.current.naturalWidth;
     const y = ((event.clientY - rect.top) / rect.height) * imageRef.current.naturalHeight;
@@ -51,6 +53,37 @@ function App() {
       body: JSON.stringify({ x, y }),
     });
     await refresh();
+  }
+
+  function sendKeyboardCommand(path: "type" | "key", body: object) {
+    if (!session || session.owner !== "human") return;
+    const sessionId = session.id;
+    commandQueue.current = commandQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await fetch(`/api/handoffs/${sessionId}/${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) throw new Error(await response.text());
+      })
+      .catch((caught) => setError(String(caught)));
+  }
+
+  function keyScreenshot(event: React.KeyboardEvent<HTMLImageElement>) {
+    if (!session || session.owner !== "human" || event.metaKey || event.ctrlKey || event.altKey) return;
+    const supportedKeys = new Set([
+      "Backspace", "Delete", "Enter", "Escape", "Tab",
+      "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End",
+    ]);
+    if (event.key.length === 1) {
+      event.preventDefault();
+      sendKeyboardCommand("type", { text: event.key });
+    } else if (supportedKeys.has(event.key)) {
+      event.preventDefault();
+      sendKeyboardCommand("key", { key: event.key });
+    }
   }
 
   async function resume() {
@@ -78,12 +111,25 @@ function App() {
         <div className="grid">
           <section className="viewer">
             <div className="session-bar"><span className={`owner ${session.owner}`}>{session.owner}</span><code>{session.url}</code></div>
-            <img ref={imageRef} onClick={clickScreenshot} src={`data:image/png;base64,${session.screenshot}`} alt="Live automated browser" />
+            <img
+              ref={imageRef}
+              onClick={clickScreenshot}
+              onKeyDown={keyScreenshot}
+              src={`data:image/png;base64,${session.screenshot}`}
+              alt="Live automated browser"
+              aria-label="Interactive live browser. Click a field, then type while this image is focused."
+              role="application"
+              tabIndex={session.owner === "human" ? 0 : -1}
+            />
           </section>
           <aside>
             <h2>Intervention</h2><p>{session.reason}</p>
             <dl><dt>Session</dt><dd>{session.id}</dd><dt>Control owner</dt><dd>{session.owner}</dd></dl>
-            <p className="hint">Clicks on the browser image are applied to the same Playwright page while you hold the lease.</p>
+            <p className="hint">
+              {session.owner === "human"
+                ? "Click a field in the browser image, then type. Mouse and keyboard input are applied to the same Playwright page."
+                : "Automation owns this session. Start a new handoff to interact as the human operator."}
+            </p>
             <button className="resume" onClick={resume} disabled={session.owner !== "human"}>Return control</button>
             <h3>Audit trail</h3>
             <ol>{session.events.map((item, index) => <li key={index}><strong>{item.actor}</strong> · {item.action}</li>)}</ol>
@@ -95,4 +141,3 @@ function App() {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
-

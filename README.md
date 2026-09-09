@@ -52,7 +52,7 @@ cua discover \
 
 Discovery refuses to start without `OPENAI_API_KEY`; there is no scripted provider presented as real evidence. Set `--model` if the default model is unavailable to your account.
 
-To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Clicks on the screenshot are routed to that page and audited. **Return control** transfers the lease back to automation.
+To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
 
 ## Evidence
 

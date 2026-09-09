@@ -57,6 +57,10 @@ class TypeCommand(BaseModel):
     text: str
 
 
+class KeyCommand(BaseModel):
+    key: str
+
+
 @app.post("/api/handoffs")
 async def start_handoff() -> dict[str, str]:
     session = await handoffs.create_demo_handoff()
@@ -87,6 +91,19 @@ async def handoff_type(session_id: str, command: TypeCommand) -> dict[str, str]:
         return {"status": "ok"}
     except (KeyError, PermissionError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/handoffs/{session_id}/key")
+async def handoff_key(session_id: str, command: KeyCommand) -> dict[str, str]:
+    try:
+        await handoffs.press_key(session_id, command.key)
+        return {"status": "ok"}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Unknown session") from error
+    except PermissionError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.post("/api/handoffs/{session_id}/resume")

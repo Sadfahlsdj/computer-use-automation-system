@@ -40,6 +40,20 @@ class HandoffSession:
 
 
 class HandoffManager:
+    ALLOWED_KEYS = {
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "Backspace",
+        "Delete",
+        "End",
+        "Enter",
+        "Escape",
+        "Home",
+        "Tab",
+    }
+
     def __init__(self) -> None:
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
@@ -140,6 +154,14 @@ class HandoffManager:
         self._require_human(session)
         await session.page.keyboard.type(text)
         session.record("human", "type", text="[REDACTED]")
+
+    async def press_key(self, session_id: str, key: str) -> None:
+        session = self.get(session_id)
+        self._require_human(session)
+        if key not in self.ALLOWED_KEYS:
+            raise ValueError(f"Unsupported operator key: {key}")
+        await session.page.keyboard.press(key)
+        session.record("human", "key", key=key)
 
     async def resume(self, session_id: str) -> None:
         session = self.get(session_id)

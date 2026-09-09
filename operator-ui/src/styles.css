@@ -15,7 +15,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .owner { border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
 .owner.human { background: #fff0c7; color: #785000; }
 .owner.automation { background: #dff3e6; color: #185c32; }
-.viewer img { display: block; width: 100%; cursor: crosshair; }
+.viewer img { display: block; width: 100%; cursor: crosshair; outline: 0; }
+.viewer img:focus { box-shadow: inset 0 0 0 4px #e6a700; }
 aside { padding: 20px; }
 aside h2 { margin-top: 0; }
 dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: 14px; }
