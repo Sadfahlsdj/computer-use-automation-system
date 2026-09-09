@@ -46,14 +46,16 @@ Run genuine LLM-driven discovery:
 cp .env.example .env
 # Edit .env and set OPENROUTER_API_KEY.
 cua discover \
-  --goal 'Look up member 10001 and return the savings balance and member status' \
-  --input member_id=10001 \
+  --goal 'Look up member 99999 and return the savings balance and member status' \
+  --input member_id=99999 \
   --output evidence/capabilities/discovered.yaml
 ```
 
 The CLI automatically loads `.env`. It reads `OPENROUTER_API_KEY`, `OPENROUTER_PROVIDER`, and `OPENROUTER_MODEL`; command-line options override those values. The provider and model are combined into OpenRouter's `provider/model` ID. The real `.env` is gitignored while `.env.example` is safe to commit. `--api-key` is also supported, but the environment file avoids storing the key in shell history.
 
 For example, `OPENROUTER_PROVIDER=nex-agi` and `OPENROUTER_MODEL=nex-n2.5-pro:free` produce `nex-agi/nex-n2.5-pro:free`. A fully qualified value such as `OPENROUTER_MODEL=openrouter/free` is also accepted and takes precedence over the separate provider. The free router selects an available free model that supports the request, although pinning a model makes evidence runs more repeatable.
+
+Discovery prints timestamped progress for browser startup, page observations, OpenRouter request attempts and elapsed time, validation retries, browser actions, checkpoint verification, and artifact saving. Input values and API keys are not included in these messages.
 
 To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
 

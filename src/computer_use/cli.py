@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -24,6 +25,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
 DEFAULT_DISCOVERY_PROVIDER = "nex-agi"
 DEFAULT_DISCOVERY_MODEL = "nex-n2.5-pro:free"
+
+
+def _configure_discovery_logging() -> None:
+    project_logger = logging.getLogger("computer_use")
+    if not any(getattr(handler, "_cua_discovery_handler", False) for handler in project_logger.handlers):
+        handler = logging.StreamHandler()
+        handler._cua_discovery_handler = True  # type: ignore[attr-defined]
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s | %(levelname)s | %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+        project_logger.addHandler(handler)
+    project_logger.setLevel(logging.INFO)
+    project_logger.propagate = False
 
 
 def _parse_inputs(values: list[str]) -> dict[str, str]:
@@ -104,7 +121,15 @@ async def _discover(
             param_hint="--api-key",
         )
     evidence = EvidenceRecorder(PROJECT_ROOT / "evidence", list(inputs.values()))
+    model_id = _openrouter_model_id(provider, model)
+    logging.getLogger(__name__).info(
+        "Starting discovery (model=%s, headed=%s, evidence=%s)",
+        model_id,
+        headed,
+        evidence.run_dir,
+    )
     async with async_playwright() as playwright:
+        logging.getLogger(__name__).info("Launching Playwright browser")
         browser = await launch_browser(playwright, headless=not headed)
         context = await browser.new_context()
         await context.tracing.start(screenshots=True, snapshots=True, sources=True)
@@ -113,7 +138,7 @@ async def _discover(
             PlaywrightSurface(page),
             _policy(),
             evidence,
-            OpenRouterDecisionProvider(_openrouter_model_id(provider, model), resolved_api_key),
+            OpenRouterDecisionProvider(model_id, resolved_api_key),
         )
         artifact = await engine.run(
             goal,
@@ -122,9 +147,11 @@ async def _discover(
             "Savings Account",
             "legacy-main",
         )
+        logging.getLogger(__name__).info("Saving discovered capability to %s", output)
         save_artifact(artifact, output)
         await context.tracing.stop(path=str(evidence.run_dir / "trace.zip"))
         await browser.close()
+    logging.getLogger(__name__).info("Discovery finished successfully")
     typer.echo(f"Saved discovered capability to {output}")
 
 
@@ -154,6 +181,7 @@ def discover(
     headed: bool = typer.Option(False, "--headed"),
 ) -> None:
     """Run genuine LLM-guided discovery and save the resulting artifact."""
+    _configure_discovery_logging()
     asyncio.run(
         _discover(
             goal,
