@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from typing import Protocol
@@ -36,13 +37,17 @@ class PlaywrightSurface:
     def url(self) -> str:
         return self.page.url
 
-    def _scope(self, frame_name: str | None) -> Page | Frame:
+    async def _scope(self, frame_name: str | None, timeout_ms: int) -> Page | Frame:
         if frame_name is None:
             return self.page
-        frame = self.page.frame(name=frame_name)
-        if frame is None:
-            raise TargetNotFound(f"Frame not found: {frame_name}")
-        return frame
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_ms / 1000
+        while loop.time() < deadline:
+            frame = self.page.frame(name=frame_name)
+            if frame is not None:
+                return frame
+            await asyncio.sleep(0.025)
+        raise TargetNotFound(f"Frame not found after {timeout_ms} ms: {frame_name}")
 
     def _candidate(self, scope: Page | Frame, target: TargetSpec, index: int) -> Locator:
         candidate = target.candidates[index]
@@ -55,7 +60,7 @@ class PlaywrightSurface:
         return scope.locator(candidate.selector)
 
     async def resolve(self, target: TargetSpec, timeout_ms: int) -> Locator:
-        scope = self._scope(target.frame)
+        scope = await self._scope(target.frame, timeout_ms)
         errors: list[str] = []
         for index, candidate in enumerate(target.candidates):
             locator = self._candidate(scope, target, index)
@@ -92,7 +97,10 @@ class PlaywrightSurface:
     async def condition_met(self, condition: Condition) -> bool:
         if condition.kind == "url_matches":
             return re.search(condition.pattern, self.url) is not None
-        scope = self._scope(condition.frame)
+        try:
+            scope = await self._scope(condition.frame, 1_000)
+        except TargetNotFound:
+            return False
         return await scope.get_by_text(condition.text, exact=False).count() > 0
 
     async def observe(self, screenshot_path: Path | None = None) -> Observation:
