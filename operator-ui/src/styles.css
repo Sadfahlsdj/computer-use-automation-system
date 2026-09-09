@@ -1,0 +1,28 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172032; background: #eef1f4; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1480px; margin: 0 auto; padding: 28px; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+h1 { margin: 4px 0 0; font-size: 30px; }
+.eyebrow { color: #47677e; font-size: 12px; font-weight: 800; letter-spacing: .14em; }
+button { border: 0; border-radius: 8px; padding: 11px 16px; background: #173f5f; color: white; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; }
+.viewer, aside, .empty { background: white; border: 1px solid #d8dee5; border-radius: 12px; box-shadow: 0 8px 30px #20324610; }
+.viewer { overflow: hidden; }
+.session-bar { min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #f7f9fb; border-bottom: 1px solid #d8dee5; }
+.session-bar code { overflow: hidden; text-overflow: ellipsis; }
+.owner { border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.owner.human { background: #fff0c7; color: #785000; }
+.owner.automation { background: #dff3e6; color: #185c32; }
+.viewer img { display: block; width: 100%; cursor: crosshair; }
+aside { padding: 20px; }
+aside h2 { margin-top: 0; }
+dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: 14px; }
+dt { color: #687484; } dd { margin: 0; font-family: ui-monospace, monospace; }
+.hint { padding: 12px; border-left: 3px solid #4f7fa1; background: #eef6fb; font-size: 13px; line-height: 1.5; }
+.resume { width: 100%; background: #1c7040; }
+ol { padding-left: 22px; font-size: 13px; line-height: 1.7; }
+.empty { padding: 70px; text-align: center; color: #566272; }
+.error { background: #fee; color: #8d1717; padding: 12px; border-radius: 8px; margin-bottom: 18px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 16px; } }

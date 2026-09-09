@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+operator-ui/node_modules/
+operator-ui/dist/
+operator-ui/.npm-cache/
+evidence/runs/

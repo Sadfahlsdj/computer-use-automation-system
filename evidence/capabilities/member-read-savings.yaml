@@ -1,0 +1,90 @@
+schema_version: "1.0"
+capability_id: member.read-savings-balance
+capability_version: 1.0.0
+title: Read member savings balance
+description: Look up a synthetic member and return their current savings balance and status.
+risk: read_only
+target_product: northstar-core-training
+inputs:
+  member_id:
+    type: string
+    description: Five-digit synthetic member identifier.
+    pattern: "^[0-9]{5}$"
+    sensitive: true
+outputs:
+  balance:
+    type: money
+    description: Current primary savings balance in USD.
+  member_status:
+    type: string
+    description: Current member status.
+steps:
+  - kind: navigate
+    id: open-console
+    url: http://127.0.0.1:8000/demo
+    risk: read_only
+  - kind: fill
+    id: enter-member-id
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: label
+          value: Member Number
+        - kind: css
+          selector: input[name="member_id"]
+    value: "{{ inputs.member_id }}"
+    sensitive: true
+    risk: reversible
+  - kind: click
+    id: search-records
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: button
+          name: Search Records
+        - kind: css
+          selector: button[type="submit"]
+    risk: reversible
+  - kind: click
+    id: open-member
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: link
+          name: Open Member
+        - kind: text
+          value: Open Member
+    risk: reversible
+  - kind: extract
+    id: read-balance
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: css
+          selector: "#savings-balance"
+    output: balance
+    transform: usd
+    risk: read_only
+  - kind: extract
+    id: read-status
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: css
+          selector: "#member-status"
+    output: member_status
+    transform: text
+    risk: read_only
+business_outcomes:
+  - code: MEMBER_NOT_FOUND
+    condition:
+      kind: text_visible
+      text: No member found
+      frame: legacy-main
+    message: No member exists for the supplied identifier.
+checkpoint:
+  - kind: text_visible
+    text: Savings Account
+    frame: legacy-main
