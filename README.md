@@ -57,6 +57,8 @@ For example, `OPENROUTER_PROVIDER=nex-agi` and `OPENROUTER_MODEL=nex-n2.5-pro:fr
 
 Discovery prints timestamped progress for browser startup, page observations, OpenRouter request attempts and elapsed time, validation retries, browser actions, checkpoint verification, and artifact saving. Input values and API keys are not included in these messages.
 
+Discovery checks known terminal business outcomes before requesting another model decision. The demo recognizes member-not-found, permission-denied, and session-expired pages and records those conditions in the generated capability. For example, discovering with member `99999` stops at `MEMBER_NOT_FOUND` instead of retrying the search until the step limit.
+
 To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
 
 The console polls only while a human-owned session is visible. Background tabs pause polling and returning control stops it. After a server restart, an unknown session returns a closed-session tombstone with an empty ID so both current and previously loaded frontends discard the stale ID and stop polling after one request.

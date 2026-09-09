@@ -116,7 +116,10 @@ class PlaywrightSurface:
                 ref: `top-${i}`,
                 tag: e.tagName.toLowerCase(),
                 role: e.getAttribute('role'),
-                name: e.getAttribute('aria-label') || e.innerText || e.name || e.placeholder || '',
+                name: e.getAttribute('aria-label') || e.labels?.[0]?.innerText?.trim() ||
+                      e.innerText || e.placeholder || '',
+                id: e.id || null,
+                html_name: e.getAttribute('name'),
                 type: e.getAttribute('type')
             }))"""
         )
@@ -131,7 +134,10 @@ class PlaywrightSurface:
                         ref: `frame-${i}`,
                         tag: e.tagName.toLowerCase(),
                         role: e.getAttribute('role'),
-                        name: e.getAttribute('aria-label') || e.innerText || e.name || e.placeholder || '',
+                        name: e.getAttribute('aria-label') || e.labels?.[0]?.innerText?.trim() ||
+                              e.innerText || e.placeholder || '',
+                        id: e.id || null,
+                        html_name: e.getAttribute('name'),
                         type: e.getAttribute('type')
                     }))"""
                 )

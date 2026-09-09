@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from computer_use.errors import TargetNotFound
 from computer_use.evidence import EvidenceRecorder
 from computer_use.models import (
+    BusinessOutcomeSpec,
     CapabilityArtifact,
     ClickStep,
     DiscoveryDecision,
@@ -37,11 +38,53 @@ class DecisionProvider(Protocol):
 SYSTEM_PROMPT = """You operate a synthetic back-office web application.
 Return one JSON action at a time. Allowed kinds: navigate, fill, click, extract, complete, escalate.
 For target actions, include a robust TargetSpec using role/name or label first and CSS only as fallback.
+Every decision requires reason. Use target (not target_spec) and value (not text) for fill actions.
+Each target candidate requires a kind and the fields for that kind: role uses role/name, label and text
+use value, and css uses selector. Do not use HTML input types such as input as ARIA roles.
 Use the frame name shown in the observation. Never invent credentials or bypass policy.
 The goal is complete only after requested values have been extracted and the success state is visible.
 Return only JSON matching the provided schema."""
 
 MAX_DECISION_ATTEMPTS = 2
+
+
+def _build_artifact(
+    goal: str,
+    inputs: dict[str, str],
+    recorded: list[NavigateStep | FillStep | ClickStep | ExtractStep],
+    outputs: dict[str, OutputSpec],
+    checkpoint: TextCondition,
+    business_outcomes: list[BusinessOutcomeSpec],
+) -> CapabilityArtifact:
+    risk_order = {
+        RiskLevel.READ_ONLY: 0,
+        RiskLevel.REVERSIBLE: 1,
+        RiskLevel.IRREVERSIBLE: 2,
+    }
+    return CapabilityArtifact(
+        capability_id="discovered.member-workflow",
+        capability_version="0.1.0",
+        title="Discovered member workflow",
+        description=goal,
+        risk=max(
+            (step.risk for step in recorded),
+            default=RiskLevel.READ_ONLY,
+            key=risk_order.__getitem__,
+        ),
+        target_product="northstar-core-training",
+        inputs={
+            name: ParameterSpec(
+                type="string",
+                description=f"Invocation value for {name}",
+                sensitive=True,
+            )
+            for name in inputs
+        },
+        outputs=outputs,
+        steps=recorded,
+        business_outcomes=business_outcomes,
+        checkpoint=[checkpoint],
+    )
 
 
 class OpenRouterDecisionProvider:
@@ -163,9 +206,14 @@ class DiscoveryEngine:
         start_url: str,
         checkpoint_text: str,
         checkpoint_frame: str | None,
+        business_outcomes: list[BusinessOutcomeSpec] | None = None,
     ) -> CapabilityArtifact:
         recorded: list[NavigateStep | FillStep | ClickStep | ExtractStep] = []
         outputs: dict[str, OutputSpec] = {}
+        configured_outcomes = business_outcomes or []
+        checkpoint = TextCondition(
+            kind="text_visible", text=checkpoint_text, frame=checkpoint_frame
+        )
         initial = NavigateStep(id="open-target", url=start_url)
         self.policy.check_step(initial)
         logger.info("Navigating to discovery start page: %s", start_url)
@@ -180,6 +228,25 @@ class DiscoveryEngine:
                 self.policy.config.max_steps,
             )
             observation = await self.surface.observe(screenshot)
+            for outcome in configured_outcomes:
+                if await self.surface.condition_met(outcome.condition):
+                    logger.info(
+                        "Terminal business outcome recognized (code=%s)",
+                        outcome.code,
+                    )
+                    self.evidence.record(
+                        "discovery_business_outcome",
+                        index=index,
+                        code=outcome.code,
+                    )
+                    return _build_artifact(
+                        goal,
+                        inputs,
+                        recorded,
+                        outputs,
+                        checkpoint,
+                        configured_outcomes,
+                    )
             safe_observation = self.evidence.redact(observation.model_dump(mode="json"))
             decision = await self.provider.decide(goal, safe_observation)
             logger.info("Discovery step %d: model selected %s", index + 1, decision.kind)
@@ -187,39 +254,16 @@ class DiscoveryEngine:
             step_id = f"discovered-{index:02d}"
             if decision.kind == "complete":
                 logger.info("Model declared completion; verifying checkpoint")
-                checkpoint = TextCondition(
-                    kind="text_visible", text=checkpoint_text, frame=checkpoint_frame
-                )
                 if not await self.surface.condition_met(checkpoint):
                     raise RuntimeError("Model declared completion before the checkpoint was satisfied")
                 logger.info("Discovery checkpoint verified")
-                risk_order = {
-                    RiskLevel.READ_ONLY: 0,
-                    RiskLevel.REVERSIBLE: 1,
-                    RiskLevel.IRREVERSIBLE: 2,
-                }
-                return CapabilityArtifact(
-                    capability_id="discovered.member-workflow",
-                    capability_version="0.1.0",
-                    title="Discovered member workflow",
-                    description=goal,
-                    risk=max(
-                        (step.risk for step in recorded),
-                        default=RiskLevel.READ_ONLY,
-                        key=risk_order.__getitem__,
-                    ),
-                    target_product="northstar-core-training",
-                    inputs={
-                        name: ParameterSpec(
-                            type="string",
-                            description=f"Invocation value for {name}",
-                            sensitive=True,
-                        )
-                        for name in inputs
-                    },
-                    outputs=outputs,
-                    steps=recorded,
-                    checkpoint=[checkpoint],
+                return _build_artifact(
+                    goal,
+                    inputs,
+                    recorded,
+                    outputs,
+                    checkpoint,
+                    configured_outcomes,
                 )
             if decision.kind == "escalate":
                 raise RuntimeError(f"Discovery requested human intervention: {decision.reason}")

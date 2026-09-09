@@ -15,7 +15,7 @@ from computer_use.artifacts import load_artifact, save_artifact
 from computer_use.browser import launch_browser
 from computer_use.discovery import DiscoveryEngine, OpenRouterDecisionProvider
 from computer_use.evidence import EvidenceRecorder
-from computer_use.models import PolicyConfig
+from computer_use.models import BusinessOutcomeSpec, PolicyConfig, TextCondition
 from computer_use.policy import PolicyEngine
 from computer_use.replay import ReplayEngine
 from computer_use.surface import PlaywrightSurface
@@ -71,6 +71,38 @@ def _policy() -> PolicyEngine:
 
     data = yaml.safe_load((PROJECT_ROOT / "config" / "policy.yaml").read_text())
     return PolicyEngine(PolicyConfig.model_validate(data))
+
+
+def _demo_business_outcomes() -> list[BusinessOutcomeSpec]:
+    return [
+        BusinessOutcomeSpec(
+            code="MEMBER_NOT_FOUND",
+            condition=TextCondition(
+                kind="text_visible",
+                text="No member found",
+                frame="legacy-main",
+            ),
+            message="No member exists for the supplied identifier.",
+        ),
+        BusinessOutcomeSpec(
+            code="PERMISSION_DENIED",
+            condition=TextCondition(
+                kind="text_visible",
+                text="Permission denied",
+                frame="legacy-main",
+            ),
+            message="The current operator cannot access this member.",
+        ),
+        BusinessOutcomeSpec(
+            code="SESSION_EXPIRED",
+            condition=TextCondition(
+                kind="text_visible",
+                text="session has expired",
+                frame="legacy-main",
+            ),
+            message="The target application session expired.",
+        ),
+    ]
 
 
 @app.command()
@@ -146,6 +178,7 @@ async def _discover(
             "http://127.0.0.1:8000/demo",
             "Savings Account",
             "legacy-main",
+            _demo_business_outcomes(),
         )
         logging.getLogger(__name__).info("Saving discovered capability to %s", output)
         save_artifact(artifact, output)
