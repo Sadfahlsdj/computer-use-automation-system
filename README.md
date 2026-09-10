@@ -76,6 +76,8 @@ Replay stops before the synthetic irreversible `create-account` step and prints 
 
 `evidence/capabilities/member-open-subaccount.yaml` is a manually authored, curated test fixture. It exists to make the irreversible-action handoff reproducible without relying on an LLM to choose that workflow during a demonstration. It is not presented as a discovery output. Genuine LLM-generated artifacts use timestamped names such as `discovered-success-2026-09-10T19-43-39.311729Z.yaml` and are paired with their discovery evidence under `evidence/runs/`.
 
+The genuine discovery run and the curated handoff replay are intentionally separate, reproducible demonstrations of two system paths. The assignment does not require the evidence-producing discovery run itself to enter handoff. The discovery executor nevertheless uses the same handoff mechanism when the model returns an `escalate` decision: it pauses the current Playwright session, routes its context to the operator, and re-observes the same page after control is returned.
+
 The **Start demo handoff** button at <http://127.0.0.1:8000> remains available as a standalone UI demonstration. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited.
 
 The console polls only while a human-owned session is visible. Background tabs pause polling and returning control stops it. After a server restart, an unknown session returns a closed-session tombstone with an empty ID so both current and previously loaded frontends discard the stale ID and stop polling after one request.
@@ -101,7 +103,7 @@ pytest
 
 ## Important limitations
 
-- The repository includes a real OpenRouter discovery adapter, but a genuine discovery artifact must be generated with the submitter's API key.
+- Genuine discovery requires the submitter's OpenRouter API key; deterministic replay and the curated handoff demonstration do not use a model or require that key.
 - Browser sessions are in process and intentionally non-durable.
 - The operator console uses screenshot polling rather than video streaming.
 - Desktop adapters and tenant infrastructure are design seams, not implementations.
