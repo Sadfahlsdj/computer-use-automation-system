@@ -20,6 +20,14 @@ Waits are attached to locator visibility and explicit checkpoints instead of fix
 
 This slice does not yet implement automatic reauthentication, unexpected-dialog classification, or a general backoff strategy for slow loads. Those states therefore time out, escalate where the typed surface error permits it, or return an application failure. The deliberate boundary is bounded deterministic execution plus human recovery, not open-ended model repair during production replay.
 
+The committed artifacts and evidence are intentionally small and each serves a distinct purpose:
+
+- `discovered-success-2026-09-10T19-43-39.311729Z.yaml` is the capability emitted by a genuine successful LLM discovery run. Its matching `evidence/runs/2026-09-10T19-43-39.311729Z/` directory contains the model decisions and reasons, observation screenshots, and Playwright trace from that discovery.
+- `discovered-business-member-not-found-2026-09-09T21-24-33.787567Z.yaml` is the artifact emitted when discovery recognized `MEMBER_NOT_FOUND` as a terminal business outcome. Its matching run directory shows that discovery stopped deliberately instead of treating the result as a crash or continuing to call the model.
+- `member-open-subaccount.yaml` is a manually authored, curated fixture rather than a claimed discovery output. It provides a repeatable irreversible step for evaluating policy and handoff behavior.
+- `evidence/runs/2026-09-10T19-50-40.832025Z/` records LLM-free deterministic replay of the successful discovered capability, including the returned balance and member status.
+- `evidence/runs/2026-09-10T20-20-49.231180Z/` records the curated handoff replay: automation reached `create-account`, ceded the same browser session, captured the human actions and returned-control event, resumed, and verified the confirmation checkpoint.
+
 # Heterogeneity & multi-tenant
 
 The execution verbs are surface-neutral and Playwright-specific resolution lives behind `Surface`. The present locator variants are web-oriented, so a desktop extension would add typed accessibility and visual-anchor locator variants rather than pretending CSS applies everywhere. A desktop adapter could resolve semantic candidates against an OS accessibility tree and use screenshot anchors or coordinates as bounded fallbacks. Legacy web frames are already represented explicitly.
