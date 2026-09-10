@@ -134,6 +134,25 @@ class ExtractThenCompleteProvider:
         return DiscoveryDecision(kind="complete", reason="Required outputs captured")
 
 
+class EscalateThenCompleteProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def decide(self, goal: str, observation: dict[str, object]) -> DiscoveryDecision:
+        self.calls += 1
+        if self.calls == 1:
+            return DiscoveryDecision(kind="escalate", reason="Operator must clear a dialog")
+        return DiscoveryDecision(kind="complete", reason="Operator cleared the dialog")
+
+
+class RecordingInterventions:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, str | None]] = []
+
+    async def request(self, **request: str | None) -> None:
+        self.requests.append(request)
+
+
 async def test_discovery_reobserves_after_target_disappears(tmp_path: Path) -> None:
     provider = StaleThenCompleteProvider()
     evidence = EvidenceRecorder(tmp_path)
@@ -246,3 +265,37 @@ async def test_discovery_captures_required_outputs_before_completion(tmp_path: P
         "balance"
     ]
     assert "discovery_premature_completion" in evidence.log_path.read_text()
+
+
+async def test_discovery_hands_off_and_resumes_same_loop(tmp_path: Path) -> None:
+    provider = EscalateThenCompleteProvider()
+    interventions = RecordingInterventions()
+    evidence = EvidenceRecorder(tmp_path)
+    engine = DiscoveryEngine(
+        AccountSurface(),
+        default_policy(),
+        evidence,
+        provider,
+        interventions,
+    )
+
+    artifact = await engine.run(
+        "Read member balance",
+        {},
+        "http://127.0.0.1:8000/demo",
+        "Savings Account",
+        "legacy-main",
+    )
+
+    assert artifact.capability_id == "discovered.member-workflow"
+    assert provider.calls == 2
+    assert interventions.requests == [
+        {
+            "reason": "Operator must clear a dialog",
+            "capability_id": "discovered.member-workflow",
+            "goal": "Read member balance",
+            "current_step": "discovered-00",
+            "kind": "manual_recovery",
+        }
+    ]
+    assert "discovery_resumed_after_handoff" in evidence.log_path.read_text()

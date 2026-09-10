@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
-from computer_use.errors import AutomationError, CheckpointFailed
+from computer_use.errors import AutomationError, CheckpointFailed, PolicyViolation
 from computer_use.evidence import EvidenceRecorder
+from computer_use.intervention import InterventionHandler
 from computer_use.models import (
     CapabilityArtifact,
     RunResult,
@@ -46,10 +47,62 @@ def validate_inputs(artifact: CapabilityArtifact, inputs: dict[str, Any]) -> Non
 
 
 class ReplayEngine:
-    def __init__(self, surface: Surface, policy: PolicyEngine, evidence: EvidenceRecorder) -> None:
+    def __init__(
+        self,
+        surface: Surface,
+        policy: PolicyEngine,
+        evidence: EvidenceRecorder,
+        interventions: InterventionHandler | None = None,
+    ) -> None:
         self.surface = surface
         self.policy = policy
         self.evidence = evidence
+        self.interventions = interventions
+
+    async def _request_intervention(
+        self,
+        *,
+        artifact: CapabilityArtifact,
+        current_step: str | None,
+        reason: str,
+        kind: Literal["approval", "manual_recovery"],
+    ) -> None:
+        if self.interventions is None:
+            raise RuntimeError(reason)
+        self.evidence.record(
+            "intervention_requested",
+            capability_id=artifact.capability_id,
+            step_id=current_step,
+            reason=reason,
+        )
+        await self.interventions.request(
+            reason=reason,
+            capability_id=artifact.capability_id,
+            goal=artifact.description,
+            current_step=current_step,
+            kind=kind,
+        )
+        self.evidence.record(
+            "run_resumed_after_handoff",
+            capability_id=artifact.capability_id,
+            step_id=current_step,
+        )
+
+    async def _execute_step(
+        self,
+        step: Any,
+        inputs: dict[str, Any],
+        outputs: dict[str, Any],
+    ) -> None:
+        if step.kind == "navigate":
+            await self.surface.navigate(_render(step.url, inputs), step.timeout_ms)
+        elif step.kind == "fill":
+            await self.surface.fill(step.target, _render(step.value, inputs), step.timeout_ms)
+        elif step.kind == "click":
+            await self.surface.click(step.target, step.timeout_ms)
+        else:
+            raw = await self.surface.extract(step.target, step.timeout_ms)
+            outputs[step.output] = _transform(raw, step.transform)
 
     async def _business_outcome(self, artifact: CapabilityArtifact) -> RunResult | None:
         for outcome in artifact.business_outcomes:
@@ -85,24 +138,42 @@ class ReplayEngine:
                 raise ValueError("Artifact exceeds the configured maximum step count")
             for step in artifact.steps:
                 current_step = step.id
-                self.policy.check_step(step, self.surface.url if self.surface.url != "about:blank" else None)
+                try:
+                    self.policy.check_step(
+                        step,
+                        self.surface.url if self.surface.url != "about:blank" else None,
+                    )
+                except PolicyViolation as error:
+                    if "requires human confirmation" not in str(error) or self.interventions is None:
+                        raise
+                    await self._request_intervention(
+                        artifact=artifact,
+                        current_step=current_step,
+                        reason=str(error),
+                        kind="approval",
+                    )
+                    self.policy.approve(step.id)
+                    self.policy.check_step(
+                        step,
+                        self.surface.url if self.surface.url != "about:blank" else None,
+                    )
                 self.evidence.record("step_started", step_id=step.id, action=step.kind)
                 attempts = min(getattr(step, "retries", 0), self.policy.config.max_retries_per_step) + 1
                 for attempt in range(attempts):
                     try:
-                        if step.kind == "navigate":
-                            await self.surface.navigate(_render(step.url, inputs), step.timeout_ms)
-                        elif step.kind == "fill":
-                            await self.surface.fill(step.target, _render(step.value, inputs), step.timeout_ms)
-                        elif step.kind == "click":
-                            await self.surface.click(step.target, step.timeout_ms)
-                        else:
-                            raw = await self.surface.extract(step.target, step.timeout_ms)
-                            outputs[step.output] = _transform(raw, step.transform)
+                        await self._execute_step(step, inputs, outputs)
                         break
-                    except Exception:
+                    except AutomationError as error:
                         if attempt + 1 >= attempts:
-                            raise
+                            if self.interventions is None:
+                                raise
+                            await self._request_intervention(
+                                artifact=artifact,
+                                current_step=current_step,
+                                reason=f"Replay could not complete {step.id}: {error}",
+                                kind="manual_recovery",
+                            )
+                            await self._execute_step(step, inputs, outputs)
                 self.evidence.record("step_completed", step_id=step.id)
                 outcome = await self._business_outcome(artifact)
                 if outcome:
@@ -113,7 +184,22 @@ class ReplayEngine:
                 if not await self.surface.condition_met(condition)
             ]
             if unmet:
-                raise CheckpointFailed(f"Unmet checkpoint conditions: {unmet}")
+                checkpoint_error = CheckpointFailed(f"Unmet checkpoint conditions: {unmet}")
+                if self.interventions is None:
+                    raise checkpoint_error
+                await self._request_intervention(
+                    artifact=artifact,
+                    current_step=current_step,
+                    reason=str(checkpoint_error),
+                    kind="manual_recovery",
+                )
+                unmet = [
+                    condition.model_dump(mode="json")
+                    for condition in artifact.checkpoint
+                    if not await self.surface.condition_met(condition)
+                ]
+                if unmet:
+                    raise CheckpointFailed(f"Unmet checkpoint conditions after handoff: {unmet}")
             self.evidence.record("run_completed", outputs=outputs)
             return RunResult(
                 status=RunStatus.SUCCESS,

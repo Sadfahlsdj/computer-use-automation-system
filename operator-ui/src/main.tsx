@@ -7,6 +7,10 @@ type Session = {
   id: string;
   owner: "automation" | "human" | "closed";
   reason: string;
+  capability_id: string | null;
+  goal: string | null;
+  current_step: string | null;
+  kind: "approval" | "manual_recovery";
   url: string;
   screenshot: string;
   events: Event[];
@@ -104,6 +108,13 @@ function App() {
   }
 
   useEffect(() => {
+    const sessionId = new URLSearchParams(window.location.search).get("session");
+    if (sessionId) {
+      void refresh(sessionId).catch((caught) => setError(String(caught)));
+    }
+  }, []);
+
+  useEffect(() => {
     if (!session?.id || session.owner !== "human") return;
     const sessionId = session.id;
     let timer: number | undefined;
@@ -154,13 +165,21 @@ function App() {
           </section>
           <aside>
             <h2>Intervention</h2><p>{session.reason}</p>
-            <dl><dt>Session</dt><dd>{session.id}</dd><dt>Control owner</dt><dd>{session.owner}</dd></dl>
+            <dl>
+              <dt>Session</dt><dd>{session.id}</dd>
+              <dt>Control owner</dt><dd>{session.owner}</dd>
+              {session.capability_id && <><dt>Capability</dt><dd>{session.capability_id}</dd></>}
+              {session.current_step && <><dt>Current step</dt><dd>{session.current_step}</dd></>}
+            </dl>
+            {session.goal && <div className="goal"><strong>Goal</strong><span>{session.goal}</span></div>}
             <p className="hint">
               {session.owner === "human"
                 ? "Click a field in the browser image, then type. Mouse and keyboard input are applied to the same Playwright page."
                 : "Automation owns this session. Start a new handoff to interact as the human operator."}
             </p>
-            <button className="resume" onClick={resume} disabled={session.owner !== "human"}>Return control</button>
+            <button className="resume" onClick={resume} disabled={session.owner !== "human"}>
+              {session.kind === "approval" ? "Approve and return control" : "Return control"}
+            </button>
             <h3>Audit trail</h3>
             <ol>{session.events.map((item, index) => <li key={index}><strong>{item.actor}</strong> · {item.action}</li>)}</ol>
           </aside>

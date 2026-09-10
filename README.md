@@ -66,7 +66,19 @@ Discovery checks known terminal business outcomes before requesting another mode
 
 The requested `--output` is treated as a filename base. Discovery appends the outcome and evidence timestamp so runs do not overwrite one another, for example `discovered-success-2026-09-10T19-20-00.000000Z.yaml` and `discovered-business-member-not-found-2026-09-10T19-21-00.000000Z.yaml`. Successful discovery also requires both `balance` and `member_status` extraction steps before accepting model completion.
 
-To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
+To demonstrate an integrated replay handoff, keep `cua serve` running and execute:
+
+```bash
+cua replay evidence/capabilities/member-open-subaccount.yaml \
+  --input member_id=10001 \
+  --input nickname=Vacation
+```
+
+Replay stops before the synthetic irreversible `create-account` step and prints a direct operator-console URL on port 8001. Open that URL, inspect the same live Playwright page, and select **Approve and return control**; that explicit action authorizes replay to execute the named step. For stuck-state interventions, the operator may manipulate the page before selecting **Return control**, after which automation retries or rechecks the blocked operation. All human actions are recorded in the run's `events.jsonl`. The operator bridge starts only when needed and stops when the CLI run finishes. The default wait is ten minutes; `--handoff-timeout` and `--handoff-port` are configurable.
+
+`evidence/capabilities/member-open-subaccount.yaml` is a manually authored, curated test fixture. It exists to make the irreversible-action handoff reproducible without relying on an LLM to choose that workflow during a demonstration. It is not presented as a discovery output. Genuine LLM-generated artifacts use timestamped names such as `discovered-success-2026-09-10T19-43-39.311729Z.yaml` and are paired with their discovery evidence under `evidence/runs/`.
+
+The **Start demo handoff** button at <http://127.0.0.1:8000> remains available as a standalone UI demonstration. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited.
 
 The console polls only while a human-owned session is visible. Background tabs pause polling and returning control stops it. After a server restart, an unknown session returns a closed-session tombstone with an empty ID so both current and previously loaded frontends discard the stale ID and stop polling after one request.
 

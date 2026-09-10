@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
@@ -18,6 +19,9 @@ from computer_use.models import (
 )
 from computer_use.policy import PolicyEngine, default_policy
 from computer_use.surface import PlaywrightSurface
+
+if TYPE_CHECKING:
+    from computer_use.evidence import EvidenceRecorder
 
 
 class ControlOwner(StrEnum):
@@ -33,10 +37,27 @@ class HandoffSession:
     page: Page
     owner: ControlOwner
     reason: str
+    capability_id: str | None = None
+    goal: str | None = None
+    current_step: str | None = None
+    kind: str = "manual_recovery"
+    owns_context: bool = True
+    evidence: EvidenceRecorder | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
+    resumed: asyncio.Event = field(default_factory=asyncio.Event)
 
     def record(self, actor: str, action: str, **details: Any) -> None:
-        self.events.append({"actor": actor, "action": action, **details})
+        event = {"actor": actor, "action": action, **details}
+        self.events.append(event)
+        if self.evidence is not None:
+            self.evidence.record(
+                "handoff_action",
+                session_id=self.id,
+                capability_id=self.capability_id,
+                goal=self.goal,
+                current_step=self.current_step,
+                **event,
+            )
 
 
 class HandoffManager:
@@ -121,10 +142,52 @@ class HandoffManager:
             page=page,
             owner=ControlOwner.HUMAN,
             reason="Irreversible Create Account action requires human review",
+            kind="approval",
         )
         session.record("automation", "ceded_control", reason=session.reason)
         self.sessions[session.id] = session
         return session
+
+    def register_intervention(
+        self,
+        *,
+        context: BrowserContext,
+        page: Page,
+        reason: str,
+        capability_id: str | None,
+        goal: str | None,
+        current_step: str | None,
+        kind: str,
+        evidence: EvidenceRecorder,
+    ) -> HandoffSession:
+        """Expose an executor-owned browser session without replacing or closing it."""
+        session = HandoffSession(
+            id=uuid.uuid4().hex[:10],
+            context=context,
+            page=page,
+            owner=ControlOwner.HUMAN,
+            reason=reason,
+            capability_id=capability_id,
+            goal=goal,
+            current_step=current_step,
+            kind=kind,
+            owns_context=False,
+            evidence=evidence,
+        )
+        session.record("automation", "ceded_control", reason=reason)
+        self.sessions[session.id] = session
+        return session
+
+    async def wait_for_resume(self, session_id: str, timeout_seconds: float) -> None:
+        session = self.get(session_id)
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                await session.resumed.wait()
+        except TimeoutError as error:
+            session.record("system", "handoff_timed_out", timeout_seconds=timeout_seconds)
+            raise TimeoutError(
+                f"Human intervention was not returned within {timeout_seconds:.0f} seconds"
+            ) from error
 
     def get(self, session_id: str) -> HandoffSession:
         if session_id not in self.sessions:
@@ -138,6 +201,10 @@ class HandoffManager:
             "id": session.id,
             "owner": session.owner,
             "reason": session.reason,
+            "capability_id": session.capability_id,
+            "goal": session.goal,
+            "current_step": session.current_step,
+            "kind": session.kind,
             "url": session.page.url,
             "screenshot": base64.b64encode(image).decode(),
             "events": session.events[-20:],
@@ -168,10 +235,12 @@ class HandoffManager:
         self._require_human(session)
         session.owner = ControlOwner.AUTOMATION
         session.record("human", "returned_control")
+        session.resumed.set()
 
     async def close(self, session_id: str) -> None:
         session = self.get(session_id)
-        await session.context.close()
+        if session.owns_context:
+            await session.context.close()
         session.owner = ControlOwner.CLOSED
         session.record("system", "closed")
 
@@ -182,7 +251,7 @@ class HandoffManager:
 
     async def shutdown(self) -> None:
         for session in self.sessions.values():
-            if session.owner != ControlOwner.CLOSED:
+            if session.owner != ControlOwner.CLOSED and session.owns_context:
                 await session.context.close()
         if self._browser:
             await self._browser.close()

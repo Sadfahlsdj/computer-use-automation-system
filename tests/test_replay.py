@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from computer_use.artifacts import load_artifact
+from computer_use.errors import TargetNotFound
 from computer_use.evidence import EvidenceRecorder
-from computer_use.models import Condition, Observation, RunStatus, TargetSpec
+from computer_use.models import Condition, Observation, RiskLevel, RunStatus, TargetSpec
 from computer_use.policy import default_policy
 from computer_use.replay import ReplayEngine
 
@@ -43,6 +44,25 @@ class FakeSurface:
         raise NotImplementedError
 
 
+class RecordingInterventions:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, str | None]] = []
+
+    async def request(self, **request: str | None) -> None:
+        self.requests.append(request)
+
+
+class RecoverableSurface(FakeSurface):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed_once = False
+
+    async def click(self, target: TargetSpec, timeout_ms: int) -> None:
+        if not self.failed_once:
+            self.failed_once = True
+            raise TargetNotFound("button temporarily unavailable")
+
+
 async def test_replay_success(tmp_path: Path) -> None:
     artifact = load_artifact(ROOT / "evidence/capabilities/member-read-savings.yaml")
     evidence = EvidenceRecorder(tmp_path, ["10001"])
@@ -70,3 +90,36 @@ async def test_replay_rejects_invalid_input(tmp_path: Path) -> None:
     ).run(artifact, {"member_id": "abc"})
     assert result.status == RunStatus.FAILURE
     assert result.category == "invalid_input"
+
+
+async def test_replay_hands_off_for_irreversible_step_then_resumes(tmp_path: Path) -> None:
+    artifact = load_artifact(ROOT / "evidence/capabilities/member-read-savings.yaml")
+    artifact.steps[2].risk = RiskLevel.IRREVERSIBLE
+    interventions = RecordingInterventions()
+
+    result = await ReplayEngine(
+        FakeSurface(),
+        default_policy(),
+        EvidenceRecorder(tmp_path, ["10001"]),
+        interventions,
+    ).run(artifact, {"member_id": "10001"})
+
+    assert result.status == RunStatus.SUCCESS
+    assert interventions.requests[0]["current_step"] == artifact.steps[2].id
+    assert "requires human confirmation" in str(interventions.requests[0]["reason"])
+
+
+async def test_replay_hands_off_and_retries_failed_target(tmp_path: Path) -> None:
+    artifact = load_artifact(ROOT / "evidence/capabilities/member-read-savings.yaml")
+    interventions = RecordingInterventions()
+
+    result = await ReplayEngine(
+        RecoverableSurface(),
+        default_policy(),
+        EvidenceRecorder(tmp_path, ["10001"]),
+        interventions,
+    ).run(artifact, {"member_id": "10001"})
+
+    assert result.status == RunStatus.SUCCESS
+    assert len(interventions.requests) == 1
+    assert "temporarily unavailable" in str(interventions.requests[0]["reason"])

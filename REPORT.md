@@ -24,7 +24,9 @@ Capabilities identify a vendor product independently of a tenant. A production c
 
 # Escalation & handoff
 
-An intervention contains the session, current state, reason, and audit trail. The demo automates through account lookup to a risky confirmation, changes the lease from automation to human, and preserves the same browser context. The operator can act on the live page through screenshot coordinates; actions are recorded with `actor=human`. Returning control changes the lease back to automation. The server rejects human commands when the human does not hold the lease.
+An intervention contains the session, capability, goal, current step, current state, reason, and audit trail. Discovery routes an explicit model escalation to the operator. Replay routes an unresolved target or checkpoint and pauses before a policy-gated irreversible step. Because a CLI executor and `cua serve` are separate processes, the CLI lazily starts a small operator bridge on port 8001 in its own process; that bridge therefore owns references to the executor's exact Playwright page and context rather than attempting to reconstruct them elsewhere.
+
+The operator can act on the live page through screenshot coordinates and keyboard commands while automation awaits a resume event. Human and control-transfer actions are appended to the same evidence recorder used by the run. Returning control changes the exclusive lease back to automation; discovery re-observes, while replay retries a blocked target, rechecks a failed checkpoint, or executes the specifically approved risky step. The server rejects human commands when the human does not hold the lease. A standalone handoff button remains for a quick UI-only demonstration.
 
 The demo does not attempt production co-browsing. A deployment would add authenticated operators, expiring leases, WebRTC streaming, durable intervention routing, and stronger reconnect semantics without changing the executor/session seam.
 

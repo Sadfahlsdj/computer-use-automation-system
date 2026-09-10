@@ -12,6 +12,7 @@ import uvicorn
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
+from computer_use.app import handoffs
 from computer_use.artifacts import load_artifact, save_artifact
 from computer_use.browser import launch_browser
 from computer_use.discovery import (
@@ -20,6 +21,7 @@ from computer_use.discovery import (
     OpenRouterDecisionProvider,
 )
 from computer_use.evidence import EvidenceRecorder
+from computer_use.intervention import CliInterventionHandler, OperatorBridge
 from computer_use.models import BusinessOutcomeSpec, PolicyConfig, TextCondition
 from computer_use.policy import PolicyEngine
 from computer_use.replay import ReplayEngine
@@ -30,6 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
 DEFAULT_DISCOVERY_PROVIDER = "nex-agi"
 DEFAULT_DISCOVERY_MODEL = "nex-n2.5-pro:free"
+DEFAULT_HANDOFF_TIMEOUT_SECONDS = 600.0
 
 
 def _configure_discovery_logging() -> None:
@@ -131,19 +134,37 @@ def serve(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> No
     uvicorn.run("computer_use.app:app", host=host, port=port, reload=reload)
 
 
-async def _replay(artifact_path: Path, inputs: dict[str, str], headed: bool) -> None:
+async def _replay(
+    artifact_path: Path,
+    inputs: dict[str, str],
+    headed: bool,
+    handoff_port: int,
+    handoff_timeout_seconds: float,
+) -> None:
     artifact = load_artifact(artifact_path)
     evidence = EvidenceRecorder(PROJECT_ROOT / "evidence", list(inputs.values()))
+    bridge = OperatorBridge(port=handoff_port)
     async with async_playwright() as playwright:
         browser = await launch_browser(playwright, headless=not headed)
         context = await browser.new_context()
         await context.tracing.start(screenshots=True, snapshots=True, sources=True)
         page = await context.new_page()
-        engine = ReplayEngine(PlaywrightSurface(page), _policy(), evidence)
-        result = await engine.run(artifact, inputs)
-        await page.screenshot(path=str(evidence.run_dir / "final.png"), full_page=True)
-        await context.tracing.stop(path=str(evidence.run_dir / "trace.zip"))
-        await browser.close()
+        interventions = CliInterventionHandler(
+            handoffs,
+            bridge,
+            context,
+            page,
+            evidence,
+            handoff_timeout_seconds,
+        )
+        try:
+            engine = ReplayEngine(PlaywrightSurface(page), _policy(), evidence, interventions)
+            result = await engine.run(artifact, inputs)
+            await page.screenshot(path=str(evidence.run_dir / "final.png"), full_page=True)
+        finally:
+            await bridge.stop()
+            await context.tracing.stop(path=str(evidence.run_dir / "trace.zip"))
+            await browser.close()
     typer.echo(json.dumps(result.model_dump(mode="json"), indent=2))
 
 
@@ -152,9 +173,25 @@ def replay(
     artifact: Path = typer.Argument(..., exists=True, dir_okay=False),
     input: list[str] = typer.Option([], "--input", "-i"),
     headed: bool = typer.Option(False, "--headed"),
+    handoff_port: int = typer.Option(8001, "--handoff-port", min=1, max=65535),
+    handoff_timeout: float = typer.Option(
+        DEFAULT_HANDOFF_TIMEOUT_SECONDS,
+        "--handoff-timeout",
+        min=1,
+        help="Seconds to wait for an operator to return control",
+    ),
 ) -> None:
     """Replay a capability without an LLM in the decision loop."""
-    asyncio.run(_replay(artifact.resolve(), _parse_inputs(input), headed))
+    _configure_discovery_logging()
+    asyncio.run(
+        _replay(
+            artifact.resolve(),
+            _parse_inputs(input),
+            headed,
+            handoff_port,
+            handoff_timeout,
+        )
+    )
 
 
 async def _discover(
@@ -166,6 +203,8 @@ async def _discover(
     api_key: str | None,
     headed: bool,
     request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    handoff_port: int = 8001,
+    handoff_timeout_seconds: float = DEFAULT_HANDOFF_TIMEOUT_SECONDS,
 ) -> Path:
     resolved_api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
     if not resolved_api_key:
@@ -183,6 +222,7 @@ async def _discover(
         evidence.run_dir,
     )
     saved_path: Path | None = None
+    bridge = OperatorBridge(port=handoff_port)
     async with async_playwright() as playwright:
         logging.getLogger(__name__).info("Launching Playwright browser")
         browser = await launch_browser(playwright, headless=not headed)
@@ -198,6 +238,14 @@ async def _discover(
                     model_id,
                     resolved_api_key,
                     request_timeout_seconds=request_timeout_seconds,
+                ),
+                CliInterventionHandler(
+                    handoffs,
+                    bridge,
+                    context,
+                    page,
+                    evidence,
+                    handoff_timeout_seconds,
                 ),
             )
             artifact = await engine.run(
@@ -234,6 +282,7 @@ async def _discover(
             )
             raise
         finally:
+            await bridge.stop()
             await context.tracing.stop(path=str(evidence.run_dir / "trace.zip"))
             await browser.close()
     logging.getLogger(__name__).info("Discovery finished successfully")
@@ -278,6 +327,13 @@ def discover(
         min=1,
         help="Maximum seconds to wait for each OpenRouter response",
     ),
+    handoff_port: int = typer.Option(8001, "--handoff-port", min=1, max=65535),
+    handoff_timeout: float = typer.Option(
+        DEFAULT_HANDOFF_TIMEOUT_SECONDS,
+        "--handoff-timeout",
+        min=1,
+        help="Seconds to wait for an operator to return control",
+    ),
 ) -> None:
     """Run genuine LLM-guided discovery and save the resulting artifact."""
     _configure_discovery_logging()
@@ -291,6 +347,8 @@ def discover(
             api_key,
             headed,
             request_timeout,
+            handoff_port,
+            handoff_timeout,
         )
     )
 

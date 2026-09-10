@@ -1,8 +1,11 @@
+import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from computer_use.app import handoff_state
+from computer_use.evidence import EvidenceRecorder
 from computer_use.handoff import ControlOwner, HandoffManager, HandoffSession
 
 
@@ -64,3 +67,31 @@ async def test_unknown_session_returns_polling_tombstone() -> None:
     assert result["id"] == ""
     assert result["owner"] == "closed"
     assert result["events"] == []
+
+
+async def test_executor_session_pauses_and_records_shared_evidence(tmp_path: Path) -> None:
+    manager = HandoffManager()
+    evidence = EvidenceRecorder(tmp_path, ["10001"])
+    session = manager.register_intervention(
+        context=SimpleNamespace(),  # type: ignore[arg-type]
+        page=SimpleNamespace(),  # type: ignore[arg-type]
+        reason="Step requires confirmation",
+        capability_id="member.open-account",
+        goal="Open a new account for member 10001",
+        current_step="create-account",
+        kind="approval",
+        evidence=evidence,
+    )
+
+    waiter = asyncio.create_task(manager.wait_for_resume(session.id, 1))
+    assert not waiter.done()
+    await manager.resume(session.id)
+    await waiter
+
+    assert session.owner == ControlOwner.AUTOMATION
+    assert session.capability_id == "member.open-account"
+    assert session.current_step == "create-account"
+    log = evidence.log_path.read_text()
+    assert "ceded_control" in log
+    assert "returned_control" in log
+    assert "10001" not in log

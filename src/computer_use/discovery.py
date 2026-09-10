@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from computer_use.errors import TargetNotFound
 from computer_use.evidence import EvidenceRecorder
+from computer_use.intervention import InterventionHandler
 from computer_use.models import (
     BusinessOutcomeSpec,
     CapabilityArtifact,
@@ -334,11 +335,13 @@ class DiscoveryEngine:
         policy: PolicyEngine,
         evidence: EvidenceRecorder,
         provider: DecisionProvider,
+        interventions: InterventionHandler | None = None,
     ) -> None:
         self.surface = surface
         self.policy = policy
         self.evidence = evidence
         self.provider = provider
+        self.interventions = interventions
 
     async def run(
         self,
@@ -435,7 +438,23 @@ class DiscoveryEngine:
                     configured_outcomes,
                 )
             if decision.kind == "escalate":
-                raise RuntimeError(f"Discovery requested human intervention: {decision.reason}")
+                if self.interventions is None:
+                    raise RuntimeError(
+                        f"Discovery requested human intervention: {decision.reason}"
+                    )
+                await self.interventions.request(
+                    reason=decision.reason,
+                    capability_id="discovered.member-workflow",
+                    goal=goal,
+                    current_step=step_id,
+                    kind="manual_recovery",
+                )
+                self.evidence.record(
+                    "discovery_resumed_after_handoff",
+                    index=index,
+                    current_step=step_id,
+                )
+                continue
             try:
                 if decision.kind == "navigate" and decision.url:
                     step = NavigateStep(id=step_id, url=decision.url)

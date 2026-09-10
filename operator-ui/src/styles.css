@@ -21,6 +21,8 @@ aside { padding: 20px; }
 aside h2 { margin-top: 0; }
 dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: 14px; }
 dt { color: #687484; } dd { margin: 0; font-family: ui-monospace, monospace; }
+.goal { display: grid; gap: 5px; margin: 16px 0; font-size: 13px; line-height: 1.45; }
+.goal strong { color: #687484; font-weight: 500; }
 .hint { padding: 12px; border-left: 3px solid #4f7fa1; background: #eef6fb; font-size: 13px; line-height: 1.5; }
 .resume { width: 100%; background: #1c7040; }
 ol { padding-left: 22px; font-size: 13px; line-height: 1.7; }
