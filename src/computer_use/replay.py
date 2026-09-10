@@ -16,7 +16,9 @@ from computer_use.surface import Surface
 
 
 def _render(template: str, inputs: dict[str, Any]) -> str:
+    """Return ``template`` with capability input references replaced by invocation values."""
     def replace(match: re.Match[str]) -> str:
+        """Resolve one regex ``match`` to its required invocation value."""
         key = match.group(1)
         if key not in inputs:
             raise ValueError(f"Missing input: {key}")
@@ -26,12 +28,14 @@ def _render(template: str, inputs: dict[str, Any]) -> str:
 
 
 def _transform(value: str, transform: str) -> str | float:
+    """Return extracted ``value`` unchanged or parsed as USD according to ``transform``."""
     if transform == "usd":
         return float(value.replace("$", "").replace(",", "").strip())
     return value
 
 
 def validate_inputs(artifact: CapabilityArtifact, inputs: dict[str, Any]) -> None:
+    """Validate invocation ``inputs`` against ``artifact`` names, types, and patterns."""
     unknown = set(inputs) - set(artifact.inputs)
     missing = set(artifact.inputs) - set(inputs)
     if unknown:
@@ -54,6 +58,7 @@ class ReplayEngine:
         evidence: EvidenceRecorder,
         interventions: InterventionHandler | None = None,
     ) -> None:
+        """Bind deterministic execution dependencies and an optional handoff handler."""
         self.surface = surface
         self.policy = policy
         self.evidence = evidence
@@ -67,6 +72,7 @@ class ReplayEngine:
         reason: str,
         kind: Literal["approval", "manual_recovery"],
     ) -> None:
+        """Request intervention for the current artifact step and return after resume."""
         if self.interventions is None:
             raise RuntimeError(reason)
         self.evidence.record(
@@ -94,6 +100,7 @@ class ReplayEngine:
         inputs: dict[str, Any],
         outputs: dict[str, Any],
     ) -> None:
+        """Execute one typed ``step``, mutating ``outputs`` only for extraction steps."""
         if step.kind == "navigate":
             await self.surface.navigate(_render(step.url, inputs), step.timeout_ms)
         elif step.kind == "fill":
@@ -105,6 +112,7 @@ class ReplayEngine:
             outputs[step.output] = _transform(raw, step.transform)
 
     async def _business_outcome(self, artifact: CapabilityArtifact) -> RunResult | None:
+        """Return the first matching declared business result, otherwise ``None``."""
         for outcome in artifact.business_outcomes:
             if await self.surface.condition_met(outcome.condition):
                 self.evidence.record("business_outcome", code=outcome.code)
@@ -117,6 +125,7 @@ class ReplayEngine:
         return None
 
     async def run(self, artifact: CapabilityArtifact, inputs: dict[str, Any]) -> RunResult:
+        """Replay ``artifact`` with ``inputs`` and return a structured terminal result."""
         try:
             validate_inputs(artifact, inputs)
         except ValueError as error:

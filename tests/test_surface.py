@@ -10,11 +10,13 @@ class DelayedFramePage:
     url = "http://127.0.0.1:8000/demo"
 
     def __init__(self, available_after: int) -> None:
+        """Configure how many frame lookups occur before attachment is simulated."""
         self.available_after = available_after
         self.calls = 0
         self.expected_frame = object()
 
-    def frame(self, *, name: str):
+    def frame(self, *, name: str) -> object | None:
+        """Return the synthetic frame after its configured lookup threshold."""
         self.calls += 1
         if name == "legacy-main" and self.calls >= self.available_after:
             return self.expected_frame
@@ -22,6 +24,7 @@ class DelayedFramePage:
 
 
 async def test_scope_waits_for_delayed_frame() -> None:
+    """Verify named-frame resolution tolerates delayed legacy attachment."""
     page = DelayedFramePage(available_after=3)
     surface = PlaywrightSurface(page)  # type: ignore[arg-type]
 
@@ -32,6 +35,7 @@ async def test_scope_waits_for_delayed_frame() -> None:
 
 
 async def test_scope_times_out_when_frame_never_attaches() -> None:
+    """Verify named-frame resolution returns a bounded target-not-found error."""
     surface = PlaywrightSurface(DelayedFramePage(available_after=10_000))  # type: ignore[arg-type]
 
     with pytest.raises(TargetNotFound, match="after 20 ms"):

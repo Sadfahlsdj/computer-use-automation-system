@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 class DecisionProvider(Protocol):
-    async def decide(self, goal: str, observation: dict[str, Any]) -> DiscoveryDecision: ...
+    async def decide(self, goal: str, observation: dict[str, Any]) -> DiscoveryDecision:
+        """Return the next typed action for ``goal`` from the current ``observation``."""
+        ...
 
 
 SYSTEM_PROMPT = """You operate a synthetic back-office web application.
@@ -57,6 +59,7 @@ REQUEST_HEARTBEAT_SECONDS = 15.0
 
 
 def _infer_missing_locator_kinds(payload: dict[str, Any]) -> list[int]:
+    """Repair unambiguous locator kinds in ``payload`` and return changed indexes."""
     target = payload.get("target")
     if not isinstance(target, dict):
         return []
@@ -81,6 +84,7 @@ def _infer_missing_extract_output(
     payload: dict[str, Any],
     observation: dict[str, Any],
 ) -> str | None:
+    """Infer one omitted extract-output name from the remaining required outputs."""
     if payload.get("kind") != "extract" or payload.get("output"):
         return None
     progress = observation.get("discovery_progress", {})
@@ -115,6 +119,7 @@ def _infer_single_interactive_frame(
     decision: DiscoveryDecision,
     observation: dict[str, Any],
 ) -> str | None:
+    """Attach the sole observed iframe to a target and return its name when inferred."""
     if decision.target is None or decision.target.frame is not None:
         return None
     elements = observation.get("interactive_elements", [])
@@ -143,6 +148,7 @@ def _build_artifact(
     checkpoint: TextCondition,
     business_outcomes: list[BusinessOutcomeSpec],
 ) -> CapabilityArtifact:
+    """Convert recorded discovery actions and contracts into a validated capability."""
     risk_order = {
         RiskLevel.READ_ONLY: 0,
         RiskLevel.REVERSIBLE: 1,
@@ -182,6 +188,7 @@ class OpenRouterDecisionProvider:
         request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         heartbeat_seconds: float = REQUEST_HEARTBEAT_SECONDS,
     ) -> None:
+        """Configure an OpenRouter client for ``model`` with bounded request waits."""
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url="https://openrouter.ai/api/v1",
@@ -194,6 +201,7 @@ class OpenRouterDecisionProvider:
         self.heartbeat_seconds = heartbeat_seconds
 
     async def _request(self, **kwargs: Any) -> Any:
+        """Send one model request, logging heartbeats, and return the provider response."""
         request = asyncio.create_task(self.client.chat.completions.create(**kwargs))
         started_at = monotonic()
         try:
@@ -219,6 +227,7 @@ class OpenRouterDecisionProvider:
                     await request
 
     async def decide(self, goal: str, observation: dict[str, Any]) -> DiscoveryDecision:
+        """Ask the model for the next typed action for ``goal`` and ``observation``."""
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
@@ -337,6 +346,7 @@ class DiscoveryEngine:
         provider: DecisionProvider,
         interventions: InterventionHandler | None = None,
     ) -> None:
+        """Bind the surface, policy, evidence, model provider, and optional handoff path."""
         self.surface = surface
         self.policy = policy
         self.evidence = evidence
@@ -353,6 +363,7 @@ class DiscoveryEngine:
         business_outcomes: list[BusinessOutcomeSpec] | None = None,
         required_outputs: set[str] | None = None,
     ) -> CapabilityArtifact:
+        """Execute discovery from ``start_url`` and return its reusable capability."""
         recorded: list[NavigateStep | FillStep | ClickStep | ExtractStep] = []
         outputs: dict[str, OutputSpec] = {}
         configured_outcomes = business_outcomes or []

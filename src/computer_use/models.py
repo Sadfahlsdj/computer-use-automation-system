@@ -191,6 +191,7 @@ class DiscoveryDecision(StrictModel):
 
     @model_validator(mode="after")
     def require_action_fields(self) -> DiscoveryDecision:
+        """Return this decision after verifying fields required by its action kind."""
         missing: list[str] = []
         if self.kind == "navigate" and not self.url:
             missing.append("url")

@@ -47,6 +47,7 @@ class HandoffSession:
     resumed: asyncio.Event = field(default_factory=asyncio.Event)
 
     def record(self, actor: str, action: str, **details: Any) -> None:
+        """Record who performed ``action`` plus redacted details in session and run logs."""
         event = {"actor": actor, "action": action, **details}
         self.events.append(event)
         if self.evidence is not None:
@@ -76,17 +77,20 @@ class HandoffManager:
     }
 
     def __init__(self) -> None:
+        """Initialize empty session storage and lazy browser resources."""
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self.sessions: dict[str, HandoffSession] = {}
 
     async def _ensure_browser(self) -> Browser:
+        """Return the demo browser, starting Playwright and the browser on first use."""
         if self._browser is None:
             self._playwright = await async_playwright().start()
             self._browser = await launch_browser(self._playwright, headless=True)
         return self._browser
 
     async def create_demo_handoff(self) -> HandoffSession:
+        """Build the fixed account-review demo and return its human-owned session."""
         browser = await self._ensure_browser()
         context = await browser.new_context(viewport={"width": 1100, "height": 760})
         page = await context.new_page()
@@ -179,6 +183,7 @@ class HandoffManager:
         return session
 
     async def wait_for_resume(self, session_id: str, timeout_seconds: float) -> None:
+        """Wait until ``session_id`` returns control, or raise after ``timeout_seconds``."""
         session = self.get(session_id)
         try:
             async with asyncio.timeout(timeout_seconds):
@@ -190,11 +195,13 @@ class HandoffManager:
             ) from error
 
     def get(self, session_id: str) -> HandoffSession:
+        """Return the session identified by ``session_id`` or raise ``KeyError``."""
         if session_id not in self.sessions:
             raise KeyError(session_id)
         return self.sessions[session_id]
 
     async def state(self, session_id: str) -> dict[str, Any]:
+        """Capture and return operator-facing metadata and screenshot for a session."""
         session = self.get(session_id)
         image = await session.page.screenshot()
         return {
@@ -211,18 +218,21 @@ class HandoffManager:
         }
 
     async def click(self, session_id: str, x: float, y: float) -> None:
+        """Apply viewport coordinates ``x``/``y`` to a human-owned session."""
         session = self.get(session_id)
         self._require_human(session)
         await session.page.mouse.click(x, y)
         session.record("human", "click", x=x, y=y)
 
     async def type_text(self, session_id: str, text: str) -> None:
+        """Type ``text`` into the focused element while storing only a redacted audit event."""
         session = self.get(session_id)
         self._require_human(session)
         await session.page.keyboard.type(text)
         session.record("human", "type", text="[REDACTED]")
 
     async def press_key(self, session_id: str, key: str) -> None:
+        """Press one supported navigation/editing ``key`` in a human-owned session."""
         session = self.get(session_id)
         self._require_human(session)
         if key not in self.ALLOWED_KEYS:
@@ -231,6 +241,7 @@ class HandoffManager:
         session.record("human", "key", key=key)
 
     async def resume(self, session_id: str) -> None:
+        """Transfer ``session_id`` back to automation and signal its waiting task."""
         session = self.get(session_id)
         self._require_human(session)
         session.owner = ControlOwner.AUTOMATION
@@ -238,6 +249,7 @@ class HandoffManager:
         session.resumed.set()
 
     async def close(self, session_id: str) -> None:
+        """Close manager-owned context resources and mark ``session_id`` closed."""
         session = self.get(session_id)
         if session.owns_context:
             await session.context.close()
@@ -246,10 +258,12 @@ class HandoffManager:
 
     @staticmethod
     def _require_human(session: HandoffSession) -> None:
+        """Reject a command unless ``session`` is currently leased to a human."""
         if session.owner != ControlOwner.HUMAN:
             raise PermissionError(f"Human does not hold the control lease; owner={session.owner}")
 
     async def shutdown(self) -> None:
+        """Close manager-owned contexts, browser, and Playwright during app shutdown."""
         for session in self.sessions.values():
             if session.owner != ControlOwner.CLOSED and session.owns_context:
                 await session.context.close()

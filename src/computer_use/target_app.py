@@ -14,6 +14,7 @@ MEMBERS = {
 
 
 def page(title: str, body: str) -> HTMLResponse:
+    """Wrap escaped ``title`` and trusted synthetic ``body`` markup in the legacy shell."""
     return HTMLResponse(
         f"""<!doctype html>
 <html><head><title>{escape(title)}</title><style>
@@ -31,6 +32,7 @@ button, input {{ font: inherit; padding: 5px 8px; }}
 
 @router.get("", response_class=HTMLResponse)
 async def demo_home() -> HTMLResponse:
+    """Return the outer member console containing the named legacy iframe."""
     return page(
         "Northstar Core",
         """<div class="toolbar">Operations &gt; Member Service</div>
@@ -43,6 +45,7 @@ async def demo_home() -> HTMLResponse:
 
 @router.get("/search", response_class=HTMLResponse)
 async def search_form() -> HTMLResponse:
+    """Return the synthetic member-number lookup form."""
     return page(
         "Member Search",
         """<h2>Member Lookup</h2>
@@ -57,6 +60,7 @@ async def search_form() -> HTMLResponse:
 
 @router.post("/search", response_class=HTMLResponse)
 async def search_result(member_id: str = Form(...)) -> HTMLResponse:
+    """Return search results or a known terminal screen for ``member_id``."""
     member_id = member_id.strip()
     if member_id == "40300":
         return page("Permission Denied", '<div class="error">Permission denied for this member.</div>')
@@ -79,6 +83,7 @@ async def search_result(member_id: str = Form(...)) -> HTMLResponse:
 
 @router.get("/member/{member_id}", response_class=HTMLResponse)
 async def member_detail(member_id: str) -> HTMLResponse:
+    """Return account details for ``member_id`` or the not-found screen."""
     member = MEMBERS.get(member_id)
     if member is None:
         return page("No Member Found", '<div class="error">No member found.</div>')
@@ -96,6 +101,7 @@ async def member_detail(member_id: str) -> HTMLResponse:
 
 @router.get("/subaccount/{member_id}", response_class=HTMLResponse)
 async def subaccount(member_id: str) -> HTMLResponse:
+    """Return the synthetic sub-account review form for ``member_id``."""
     return page(
         "New Sub-Account",
         f"""<h2>New Sub-Account</h2><p>Member: {escape(member_id)}</p>
@@ -105,4 +111,3 @@ async def subaccount(member_id: str) -> HTMLResponse:
 <p>This would create a new account. Human approval is required.</p>
 <button type="button">Create Account</button></section></form>""",
     )
-

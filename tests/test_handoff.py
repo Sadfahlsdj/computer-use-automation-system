@@ -11,17 +11,21 @@ from computer_use.handoff import ControlOwner, HandoffManager, HandoffSession
 
 class FakeKeyboard:
     def __init__(self) -> None:
+        """Initialize captured typed text and special-key presses."""
         self.typed: list[str] = []
         self.pressed: list[str] = []
 
     async def type(self, text: str) -> None:
+        """Capture ``text`` instead of sending it to a browser."""
         self.typed.append(text)
 
     async def press(self, key: str) -> None:
+        """Capture a synthetic special-key press."""
         self.pressed.append(key)
 
 
 async def test_human_keyboard_input_and_control_lease() -> None:
+    """Verify keyboard commands require and preserve the exclusive human lease."""
     keyboard = FakeKeyboard()
     page = SimpleNamespace(keyboard=keyboard)
     session = HandoffSession(
@@ -47,6 +51,7 @@ async def test_human_keyboard_input_and_control_lease() -> None:
 
 
 async def test_rejects_unsupported_operator_key() -> None:
+    """Verify the operator cannot forward keys outside the explicit allowlist."""
     session = HandoffSession(
         id="test-session",
         context=SimpleNamespace(),  # type: ignore[arg-type]
@@ -62,6 +67,7 @@ async def test_rejects_unsupported_operator_key() -> None:
 
 
 async def test_unknown_session_returns_polling_tombstone() -> None:
+    """Verify stale polling receives a closed session that stops future requests."""
     result = await handoff_state("expired-session")
 
     assert result["id"] == ""
@@ -70,6 +76,7 @@ async def test_unknown_session_returns_polling_tombstone() -> None:
 
 
 async def test_executor_session_pauses_and_records_shared_evidence(tmp_path: Path) -> None:
+    """Verify cede/resume events share the executor's redacted evidence stream."""
     manager = HandoffManager()
     evidence = EvidenceRecorder(tmp_path, ["10001"])
     session = manager.register_intervention(

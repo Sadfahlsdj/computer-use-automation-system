@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,7 +19,8 @@ handoffs = HandoffManager()
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Keep shared handoff resources alive until the FastAPI application stops."""
     yield
     await handoffs.shutdown()
 
@@ -29,11 +31,13 @@ app.include_router(target_router)
 
 @app.get("/health")
 async def health() -> dict[str, str]:
+    """Return a readiness response for local health checks."""
     return {"status": "ok"}
 
 
 @app.get("/", response_class=HTMLResponse)
 async def root() -> Response:
+    """Serve the operator console or setup guidance when it is not built."""
     index = UI_DIST / "index.html"
     if index.exists():
         return FileResponse(index)
@@ -63,12 +67,14 @@ class KeyCommand(BaseModel):
 
 @app.post("/api/handoffs")
 async def start_handoff() -> dict[str, str]:
+    """Create the standalone synthetic handoff and return its session identity."""
     session = await handoffs.create_demo_handoff()
     return {"id": session.id, "owner": session.owner}
 
 
 @app.get("/api/handoffs/{session_id}")
 async def handoff_state(session_id: str) -> dict[str, object]:
+    """Return live state for ``session_id``, or a closed tombstone if it is stale."""
     try:
         return await handoffs.state(session_id)
     except KeyError:
@@ -88,6 +94,7 @@ async def handoff_state(session_id: str) -> dict[str, object]:
 
 @app.post("/api/handoffs/{session_id}/click")
 async def handoff_click(session_id: str, command: PointerCommand) -> dict[str, str]:
+    """Forward ``command`` coordinates to a human-owned browser session."""
     try:
         await handoffs.click(session_id, command.x, command.y)
         return {"status": "ok"}
@@ -97,6 +104,7 @@ async def handoff_click(session_id: str, command: PointerCommand) -> dict[str, s
 
 @app.post("/api/handoffs/{session_id}/type")
 async def handoff_type(session_id: str, command: TypeCommand) -> dict[str, str]:
+    """Type ``command.text`` into the focused control of a human-owned session."""
     try:
         await handoffs.type_text(session_id, command.text)
         return {"status": "ok"}
@@ -106,6 +114,7 @@ async def handoff_type(session_id: str, command: TypeCommand) -> dict[str, str]:
 
 @app.post("/api/handoffs/{session_id}/key")
 async def handoff_key(session_id: str, command: KeyCommand) -> dict[str, str]:
+    """Send one allowlisted non-text key to a human-owned browser session."""
     try:
         await handoffs.press_key(session_id, command.key)
         return {"status": "ok"}
@@ -119,6 +128,7 @@ async def handoff_key(session_id: str, command: KeyCommand) -> dict[str, str]:
 
 @app.post("/api/handoffs/{session_id}/resume")
 async def handoff_resume(session_id: str) -> dict[str, str]:
+    """Return the session lease to automation and wake its suspended executor."""
     try:
         await handoffs.resume(session_id)
         return {"status": "ok", "owner": "automation"}

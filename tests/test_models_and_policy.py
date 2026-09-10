@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_example_artifact_is_valid() -> None:
+    """Verify the checked-in example satisfies the versioned artifact schema."""
     artifact = load_artifact(ROOT / "evidence/capabilities/member-read-savings.yaml")
     assert artifact.schema_version == "1.0"
     assert artifact.capability_id == "member.read-savings-balance"
@@ -24,6 +25,7 @@ def test_example_artifact_is_valid() -> None:
 
 
 def test_irreversible_step_requires_approval() -> None:
+    """Verify irreversible execution is blocked until its exact step is approved."""
     policy: PolicyEngine = default_policy()
     step = ClickStep(
         id="commit",
@@ -39,6 +41,7 @@ def test_irreversible_step_requires_approval() -> None:
 
 
 def test_policy_blocks_external_origin() -> None:
+    """Verify navigation cannot leave the configured origin allowlist."""
     with pytest.raises(PolicyViolation, match="Origin is not allowed"):
         default_policy().check_url("https://example.com/demo")
 
@@ -56,5 +59,6 @@ def test_discovery_decision_requires_fields_for_action_kind(
     decision: dict[str, str],
     missing: str,
 ) -> None:
+    """Verify each decision kind rejects omission of its action-specific fields."""
     with pytest.raises(ValueError, match=missing):
         DiscoveryDecision.model_validate(decision)

@@ -16,14 +16,16 @@ type Session = {
   events: Event[];
 };
 
-function App() {
+/** Render and coordinate the operator's live intervention console. */
+function App(): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const imageRef = useRef<HTMLImageElement>(null);
   const commandQueue = useRef<Promise<void>>(Promise.resolve());
 
-  async function refresh(id = session?.id) {
+  /** Fetch session `id` and update the UI; the promise resolves after state is queued. */
+  async function refresh(id: string | undefined = session?.id): Promise<void> {
     if (!id) return;
     const response = await fetch(`/api/handoffs/${id}`);
     if (response.status === 404) {
@@ -41,7 +43,8 @@ function App() {
     setSession(nextSession);
   }
 
-  async function start() {
+  /** Start the standalone demo handoff and load its returned session. */
+  async function start(): Promise<void> {
     setBusy(true);
     setError("");
     try {
@@ -56,7 +59,8 @@ function App() {
     }
   }
 
-  async function clickScreenshot(event: React.MouseEvent<HTMLImageElement>) {
+  /** Scale an image click into browser viewport coordinates and forward it. */
+  async function clickScreenshot(event: React.MouseEvent<HTMLImageElement>): Promise<void> {
     if (!session || session.owner !== "human" || !imageRef.current) return;
     imageRef.current.focus();
     const rect = imageRef.current.getBoundingClientRect();
@@ -70,12 +74,13 @@ function App() {
     await refresh();
   }
 
-  function sendKeyboardCommand(path: "type" | "key", body: object) {
+  /** Serialize a typed keyboard command so key events reach Playwright in order. */
+  function sendKeyboardCommand(path: "type" | "key", body: object): void {
     if (!session || session.owner !== "human") return;
     const sessionId = session.id;
     commandQueue.current = commandQueue.current
       .catch(() => undefined)
-      .then(async () => {
+      .then(async (): Promise<void> => {
         const response = await fetch(`/api/handoffs/${sessionId}/${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -86,7 +91,8 @@ function App() {
       .catch((caught) => setError(String(caught)));
   }
 
-  function keyScreenshot(event: React.KeyboardEvent<HTMLImageElement>) {
+  /** Convert a supported React keyboard event into a type or special-key command. */
+  function keyScreenshot(event: React.KeyboardEvent<HTMLImageElement>): void {
     if (!session || session.owner !== "human" || event.metaKey || event.ctrlKey || event.altKey) return;
     const supportedKeys = new Set([
       "Backspace", "Delete", "Enter", "Escape", "Tab",
@@ -101,28 +107,31 @@ function App() {
     }
   }
 
-  async function resume() {
+  /** Return the current session lease to its suspended automation executor. */
+  async function resume(): Promise<void> {
     if (!session) return;
     await fetch(`/api/handoffs/${session.id}/resume`, { method: "POST" });
     await refresh();
   }
 
-  useEffect(() => {
+  useEffect((): void => {
     const sessionId = new URLSearchParams(window.location.search).get("session");
     if (sessionId) {
       void refresh(sessionId).catch((caught) => setError(String(caught)));
     }
   }, []);
 
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     if (!session?.id || session.owner !== "human") return;
     const sessionId = session.id;
     let timer: number | undefined;
 
-    const poll = () => {
+    /** Refresh the currently displayed human-owned session once. */
+    const poll = (): void => {
       void refresh(sessionId).catch((caught) => setError(String(caught)));
     };
-    const updatePolling = () => {
+    /** Run polling only while the browser tab is visible. */
+    const updatePolling = (): void => {
       if (timer !== undefined) window.clearInterval(timer);
       timer = undefined;
       if (document.visibilityState === "visible") {
@@ -133,7 +142,7 @@ function App() {
 
     updatePolling();
     document.addEventListener("visibilitychange", updatePolling);
-    return () => {
+    return (): void => {
       if (timer !== undefined) window.clearInterval(timer);
       document.removeEventListener("visibilitychange", updatePolling);
     };

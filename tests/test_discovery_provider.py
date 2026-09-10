@@ -15,6 +15,7 @@ from computer_use.discovery import OpenRouterDecisionProvider
 
 
 def test_openrouter_provider_uses_compatible_api_endpoint() -> None:
+    """Verify the adapter targets OpenRouter and disables hidden SDK retries."""
     provider = OpenRouterDecisionProvider("openrouter/free", "test-key")
 
     assert provider.model == "openrouter/free"
@@ -23,16 +24,19 @@ def test_openrouter_provider_uses_compatible_api_endpoint() -> None:
 
 
 def test_openrouter_model_id_combines_provider_and_model() -> None:
+    """Verify separate provider and model inputs form one OpenRouter identifier."""
     assert _openrouter_model_id("nex-agi", "nex-n2.5-pro:free") == (
         "nex-agi/nex-n2.5-pro:free"
     )
 
 
 def test_openrouter_model_id_accepts_fully_qualified_model() -> None:
+    """Verify an already qualified model ID is returned unchanged."""
     assert _openrouter_model_id("ignored", "openrouter/free") == "openrouter/free"
 
 
 def test_artifact_output_path_separates_success_and_business_runs() -> None:
+    """Verify output names preserve distinct success and business-outcome runs."""
     requested = Path("evidence/capabilities/discovered.yaml")
 
     assert _artifact_output_path(requested, "timestamp-a", None) == Path(
@@ -47,6 +51,7 @@ def test_artifact_output_path_separates_success_and_business_runs() -> None:
 async def test_openrouter_decision_uses_schema_and_corrects_invalid_response(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Verify invalid model JSON gets one schema-informed correction attempt."""
     caplog.set_level(logging.INFO, logger="computer_use.discovery")
     invalid = json.dumps(
         {
@@ -87,6 +92,7 @@ async def test_openrouter_decision_uses_schema_and_corrects_invalid_response(
 
 @pytest.mark.asyncio
 async def test_openrouter_decision_reports_invalid_response_after_retry() -> None:
+    """Verify repeated invalid model responses produce a clear terminal error."""
     invalid = json.dumps({"kind": "fill", "text": "10002"})
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=invalid))]
@@ -107,6 +113,7 @@ async def test_openrouter_decision_reports_invalid_response_after_retry() -> Non
 async def test_openrouter_infers_missing_extract_output_from_target(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Verify extraction output can be inferred from a matching target name."""
     raw = json.dumps(
         {
             "kind": "extract",
@@ -145,6 +152,7 @@ async def test_openrouter_infers_missing_extract_output_from_target(
 
 @pytest.mark.asyncio
 async def test_openrouter_infers_only_remaining_extract_output() -> None:
+    """Verify the sole uncaptured required output is repaired automatically."""
     raw = json.dumps(
         {
             "kind": "extract",
@@ -183,6 +191,7 @@ async def test_openrouter_infers_only_remaining_extract_output() -> None:
 async def test_openrouter_infers_missing_role_locator_kind(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Verify an omitted role-locator discriminator is inferred from its fields."""
     raw = json.dumps(
         {
             "kind": "click",
@@ -214,6 +223,7 @@ async def test_openrouter_infers_missing_role_locator_kind(
 
 @pytest.mark.asyncio
 async def test_openrouter_infers_missing_css_locator_kind() -> None:
+    """Verify an omitted CSS-locator discriminator is inferred from its selector."""
     raw = json.dumps(
         {
             "kind": "click",
@@ -245,7 +255,9 @@ async def test_openrouter_infers_missing_css_locator_kind() -> None:
 async def test_openrouter_request_has_timeout_and_heartbeat(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Verify slow provider calls emit heartbeats and stop at the request timeout."""
     async def slow_response(**kwargs: object) -> object:
+        """Delay longer than the configured timeout and otherwise return a placeholder."""
         await asyncio.sleep(1)
         return object()
 
@@ -271,6 +283,7 @@ async def test_openrouter_request_has_timeout_and_heartbeat(
 async def test_discovery_requires_openrouter_key_before_browser_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify discovery rejects a missing API key before launching a browser."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     with pytest.raises(typer.BadParameter, match="OPENROUTER_API_KEY"):

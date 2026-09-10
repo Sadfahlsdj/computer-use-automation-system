@@ -5,6 +5,7 @@ from computer_use.evidence import EvidenceRecorder
 
 
 def test_run_directory_uses_utc_timestamp(tmp_path: Path) -> None:
+    """Verify evidence directories use sortable UTC timestamp identifiers."""
     recorder = EvidenceRecorder(tmp_path)
 
     assert re.fullmatch(

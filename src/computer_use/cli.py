@@ -36,6 +36,7 @@ DEFAULT_HANDOFF_TIMEOUT_SECONDS = 600.0
 
 
 def _configure_discovery_logging() -> None:
+    """Install one timestamped console handler for all ``computer_use`` log messages."""
     project_logger = logging.getLogger("computer_use")
     if not any(getattr(handler, "_cua_discovery_handler", False) for handler in project_logger.handlers):
         handler = logging.StreamHandler()
@@ -52,6 +53,7 @@ def _configure_discovery_logging() -> None:
 
 
 def _parse_inputs(values: list[str]) -> dict[str, str]:
+    """Convert repeated ``NAME=VALUE`` CLI strings into an invocation-value mapping."""
     parsed: dict[str, str] = {}
     for value in values:
         if "=" not in value:
@@ -62,6 +64,7 @@ def _parse_inputs(values: list[str]) -> dict[str, str]:
 
 
 def _openrouter_model_id(provider: str, model: str) -> str:
+    """Combine a provider namespace and model slug into an OpenRouter model ID."""
     model = model.strip()
     if "/" in model:
         return model
@@ -75,6 +78,7 @@ def _openrouter_model_id(provider: str, model: str) -> str:
 
 
 def _policy() -> PolicyEngine:
+    """Load the repository policy YAML and return its executable policy engine."""
     import yaml
 
     data = yaml.safe_load((PROJECT_ROOT / "config" / "policy.yaml").read_text())
@@ -82,6 +86,7 @@ def _policy() -> PolicyEngine:
 
 
 def _demo_business_outcomes() -> list[BusinessOutcomeSpec]:
+    """Return the known terminal outcomes exposed by the synthetic member site."""
     return [
         BusinessOutcomeSpec(
             code="MEMBER_NOT_FOUND",
@@ -118,6 +123,7 @@ def _artifact_output_path(
     evidence_id: str,
     business_outcome_code: str | None,
 ) -> Path:
+    """Return a non-overwriting artifact path derived from outcome and evidence ID."""
     outcome = "success"
     if business_outcome_code:
         normalized = re.sub(r"[^a-z0-9]+", "-", business_outcome_code.casefold()).strip("-")
@@ -141,6 +147,7 @@ async def _replay(
     handoff_port: int,
     handoff_timeout_seconds: float,
 ) -> None:
+    """Run one artifact with ``inputs``, capture evidence, and print its JSON result."""
     artifact = load_artifact(artifact_path)
     evidence = EvidenceRecorder(PROJECT_ROOT / "evidence", list(inputs.values()))
     bridge = OperatorBridge(port=handoff_port)
@@ -206,6 +213,7 @@ async def _discover(
     handoff_port: int = 8001,
     handoff_timeout_seconds: float = DEFAULT_HANDOFF_TIMEOUT_SECONDS,
 ) -> Path:
+    """Drive genuine model discovery and return the path of the emitted capability."""
     resolved_api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
     if not resolved_api_key:
         raise typer.BadParameter(

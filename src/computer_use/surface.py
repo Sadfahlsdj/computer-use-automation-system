@@ -14,30 +14,47 @@ from computer_use.models import Condition, Observation, TargetSpec
 
 class Surface(Protocol):
     @property
-    def url(self) -> str: ...
+    def url(self) -> str:
+        """Return the surface's current top-level location."""
+        ...
 
-    async def navigate(self, url: str, timeout_ms: int) -> None: ...
+    async def navigate(self, url: str, timeout_ms: int) -> None:
+        """Navigate to ``url`` within ``timeout_ms`` milliseconds."""
+        ...
 
-    async def fill(self, target: TargetSpec, value: str, timeout_ms: int) -> None: ...
+    async def fill(self, target: TargetSpec, value: str, timeout_ms: int) -> None:
+        """Replace the contents of ``target`` with ``value`` within the timeout."""
+        ...
 
-    async def click(self, target: TargetSpec, timeout_ms: int) -> None: ...
+    async def click(self, target: TargetSpec, timeout_ms: int) -> None:
+        """Activate ``target`` within ``timeout_ms`` milliseconds."""
+        ...
 
-    async def extract(self, target: TargetSpec, timeout_ms: int) -> str: ...
+    async def extract(self, target: TargetSpec, timeout_ms: int) -> str:
+        """Return normalized visible text read from ``target`` within the timeout."""
+        ...
 
-    async def condition_met(self, condition: Condition) -> bool: ...
+    async def condition_met(self, condition: Condition) -> bool:
+        """Return whether the typed ``condition`` currently holds on the surface."""
+        ...
 
-    async def observe(self, screenshot_path: Path | None = None) -> Observation: ...
+    async def observe(self, screenshot_path: Path | None = None) -> Observation:
+        """Return structured surface state and optionally write a screenshot."""
+        ...
 
 
 class PlaywrightSurface:
     def __init__(self, page: Page) -> None:
+        """Adapt a live Playwright ``page`` to the surface-neutral execution contract."""
         self.page = page
 
     @property
     def url(self) -> str:
+        """Return the Playwright page's current top-level URL."""
         return self.page.url
 
     async def _scope(self, frame_name: str | None, timeout_ms: int) -> Page | Frame:
+        """Return the page or named frame, waiting up to ``timeout_ms`` for attachment."""
         if frame_name is None:
             return self.page
         loop = asyncio.get_running_loop()
@@ -50,6 +67,7 @@ class PlaywrightSurface:
         raise TargetNotFound(f"Frame not found after {timeout_ms} ms: {frame_name}")
 
     def _candidate(self, scope: Page | Frame, target: TargetSpec, index: int) -> Locator:
+        """Translate one ordered target candidate into a Playwright locator."""
         candidate = target.candidates[index]
         if candidate.kind == "role":
             return scope.get_by_role(candidate.role, name=candidate.name, exact=candidate.exact)
@@ -60,6 +78,7 @@ class PlaywrightSurface:
         return scope.locator(candidate.selector)
 
     async def resolve(self, target: TargetSpec, timeout_ms: int) -> Locator:
+        """Return the first visible, unique locator that satisfies ``target``."""
         scope = await self._scope(target.frame, timeout_ms)
         errors: list[str] = []
         for index, candidate in enumerate(target.candidates):
@@ -80,13 +99,16 @@ class PlaywrightSurface:
         raise TargetNotFound("; ".join(errors) or "No target candidates")
 
     async def navigate(self, url: str, timeout_ms: int) -> None:
+        """Load ``url`` and wait for DOM content within ``timeout_ms``."""
         await self.page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
 
     async def fill(self, target: TargetSpec, value: str, timeout_ms: int) -> None:
+        """Resolve ``target`` and replace its value with ``value``."""
         locator = await self.resolve(target, timeout_ms)
         await locator.fill(value, timeout=timeout_ms)
 
     async def click(self, target: TargetSpec, timeout_ms: int) -> None:
+        """Resolve and click ``target``, then briefly yield for legacy navigation."""
         locator = await self.resolve(target, timeout_ms)
         await locator.click(timeout=timeout_ms)
         # A click can start an iframe navigation after Playwright considers the
@@ -95,10 +117,12 @@ class PlaywrightSurface:
         await self.page.wait_for_timeout(250)
 
     async def extract(self, target: TargetSpec, timeout_ms: int) -> str:
+        """Resolve ``target`` and return its stripped inner text."""
         locator = await self.resolve(target, timeout_ms)
         return (await locator.inner_text(timeout=timeout_ms)).strip()
 
     async def condition_met(self, condition: Condition) -> bool:
+        """Return whether a text or URL checkpoint is currently satisfied."""
         if condition.kind == "url_matches":
             return re.search(condition.pattern, self.url) is not None
         try:
@@ -108,6 +132,7 @@ class PlaywrightSurface:
         return await scope.get_by_text(condition.text, exact=False).count() > 0
 
     async def observe(self, screenshot_path: Path | None = None) -> Observation:
+        """Collect URL, title, text, controls, extractable nodes, and optional screenshot."""
         if screenshot_path:
             screenshot_path.parent.mkdir(parents=True, exist_ok=True)
             await self.page.screenshot(path=str(screenshot_path), full_page=True)

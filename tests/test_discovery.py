@@ -21,29 +21,37 @@ class StaleTargetSurface:
     url = "http://127.0.0.1:8000/demo"
 
     async def navigate(self, url: str, timeout_ms: int) -> None:
+        """Store the requested test URL; the timeout is intentionally unused."""
         self.url = url
 
     async def fill(self, target: TargetSpec, value: str, timeout_ms: int) -> None:
+        """Accept a synthetic fill without changing fake surface state."""
         return None
 
     async def click(self, target: TargetSpec, timeout_ms: int) -> None:
+        """Simulate a click whose target disappeared before execution."""
         raise TargetNotFound("role: timed out")
 
     async def extract(self, target: TargetSpec, timeout_ms: int) -> str:
+        """Return an empty synthetic extraction result."""
         return ""
 
     async def condition_met(self, condition: Condition) -> bool:
+        """Report every synthetic checkpoint as satisfied."""
         return True
 
     async def observe(self, screenshot_path: Path | None = None) -> Observation:
+        """Return a minimal account-page observation for discovery tests."""
         return Observation(url=self.url, title="Test", text="Savings Account", interactive_elements=[])
 
 
 class StaleThenCompleteProvider:
     def __init__(self) -> None:
+        """Initialize the number of synthetic decisions issued."""
         self.calls = 0
 
     async def decide(self, goal: str, observation: dict[str, object]) -> DiscoveryDecision:
+        """Return a stale click first and completion on the next observation."""
         self.calls += 1
         if self.calls == 1:
             return DiscoveryDecision(
@@ -58,28 +66,34 @@ class StaleThenCompleteProvider:
 
 class UnexpectedProvider:
     async def decide(self, goal: str, observation: dict[str, object]) -> DiscoveryDecision:
+        """Fail if discovery incorrectly calls the model after a business outcome."""
         raise AssertionError("The model must not be called after a terminal business outcome")
 
 
 class NotFoundSurface(StaleTargetSurface):
     async def condition_met(self, condition: Condition) -> bool:
+        """Match only the member-not-found condition under test."""
         return condition.kind == "text_visible" and condition.text == "No member found"
 
 
 class AccountSurface(StaleTargetSurface):
     async def click(self, target: TargetSpec, timeout_ms: int) -> None:
+        """Accept synthetic clicks on the account surface."""
         return None
 
     async def extract(self, target: TargetSpec, timeout_ms: int) -> str:
+        """Return the balance or status fixture selected by ``target``."""
         candidate = target.candidates[0]
         if isinstance(candidate, CssLocator) and candidate.selector == "#savings-balance":
             return "$12,345.67"
         return "Active"
 
     async def condition_met(self, condition: Condition) -> bool:
+        """Match only the successful savings-account checkpoint."""
         return condition.kind == "text_visible" and condition.text == "Savings Account"
 
     async def observe(self, screenshot_path: Path | None = None) -> Observation:
+        """Return account text and extractable nodes for model-decision tests."""
         return Observation(
             url=self.url,
             title="Member Detail",
@@ -104,9 +118,11 @@ class AccountSurface(StaleTargetSurface):
 
 class ExtractThenCompleteProvider:
     def __init__(self) -> None:
+        """Collect observations supplied to the scripted provider."""
         self.observations: list[dict[str, object]] = []
 
     async def decide(self, goal: str, observation: dict[str, object]) -> DiscoveryDecision:
+        """Request both outputs before allowing discovery to complete."""
         self.observations.append(observation)
         call = len(self.observations)
         if call == 1:
@@ -136,9 +152,11 @@ class ExtractThenCompleteProvider:
 
 class EscalateThenCompleteProvider:
     def __init__(self) -> None:
+        """Initialize the number of escalation decisions issued."""
         self.calls = 0
 
     async def decide(self, goal: str, observation: dict[str, object]) -> DiscoveryDecision:
+        """Request handoff once, then complete after the executor resumes."""
         self.calls += 1
         if self.calls == 1:
             return DiscoveryDecision(kind="escalate", reason="Operator must clear a dialog")
@@ -147,13 +165,16 @@ class EscalateThenCompleteProvider:
 
 class RecordingInterventions:
     def __init__(self) -> None:
+        """Initialize storage for captured intervention requests."""
         self.requests: list[dict[str, str | None]] = []
 
     async def request(self, **request: str | None) -> None:
+        """Capture one intervention request and immediately simulate resume."""
         self.requests.append(request)
 
 
 async def test_discovery_reobserves_after_target_disappears(tmp_path: Path) -> None:
+    """Verify a stale target causes re-observation rather than artifact corruption."""
     provider = StaleThenCompleteProvider()
     evidence = EvidenceRecorder(tmp_path)
     engine = DiscoveryEngine(StaleTargetSurface(), default_policy(), evidence, provider)
@@ -172,6 +193,7 @@ async def test_discovery_reobserves_after_target_disappears(tmp_path: Path) -> N
 
 
 async def test_discovery_stops_before_model_call_for_business_outcome(tmp_path: Path) -> None:
+    """Verify a known terminal outcome stops discovery before another model call."""
     outcome = BusinessOutcomeSpec(
         code="MEMBER_NOT_FOUND",
         condition=TextCondition(
@@ -207,6 +229,7 @@ async def test_discovery_stops_before_model_call_for_business_outcome(tmp_path: 
 
 
 def test_discovery_infers_only_available_interactive_frame() -> None:
+    """Verify a target inherits the only observed interactive frame."""
     decision = DiscoveryDecision(
         kind="fill",
         reason="Enter member number",
@@ -238,6 +261,7 @@ def test_discovery_infers_only_available_interactive_frame() -> None:
 
 
 async def test_discovery_captures_required_outputs_before_completion(tmp_path: Path) -> None:
+    """Verify premature completion is rejected until all required outputs exist."""
     provider = ExtractThenCompleteProvider()
     evidence = EvidenceRecorder(tmp_path)
     engine = DiscoveryEngine(AccountSurface(), default_policy(), evidence, provider)
@@ -268,6 +292,7 @@ async def test_discovery_captures_required_outputs_before_completion(tmp_path: P
 
 
 async def test_discovery_hands_off_and_resumes_same_loop(tmp_path: Path) -> None:
+    """Verify model escalation resumes the original discovery loop and evidence."""
     provider = EscalateThenCompleteProvider()
     interventions = RecordingInterventions()
     evidence = EvidenceRecorder(tmp_path)
