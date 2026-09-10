@@ -1,0 +1,73 @@
+schema_version: '1.0'
+capability_id: discovered.member-workflow
+capability_version: 0.1.0
+title: Discovered member workflow
+description: Look up member 99999 and return the savings balance and member status
+risk: reversible
+target_product: northstar-core-training
+inputs:
+  member_id:
+    type: string
+    description: Invocation value for member_id
+    sensitive: true
+outputs: {}
+steps:
+- kind: navigate
+  id: open-target
+  url: http://127.0.0.1:8000/demo
+  risk: read_only
+  timeout_ms: 10000
+- kind: fill
+  id: discovered-00
+  target:
+    frame: legacy-main
+    candidates:
+    - kind: role
+      role: textbox
+      name: Member Number
+      exact: true
+    visible: true
+    unique: true
+  value: '{{ inputs.member_id }}'
+  sensitive: true
+  risk: reversible
+  timeout_ms: 5000
+- kind: click
+  id: discovered-01
+  target:
+    frame: legacy-main
+    candidates:
+    - kind: role
+      role: button
+      name: Search Records
+      exact: true
+    - kind: css
+      selector: '#legacy-main button[type=''submit'']'
+    visible: true
+    unique: true
+  risk: reversible
+  timeout_ms: 5000
+  retries: 0
+business_outcomes:
+- code: MEMBER_NOT_FOUND
+  condition:
+    kind: text_visible
+    text: No member found
+    frame: legacy-main
+  message: No member exists for the supplied identifier.
+- code: PERMISSION_DENIED
+  condition:
+    kind: text_visible
+    text: Permission denied
+    frame: legacy-main
+  message: The current operator cannot access this member.
+- code: SESSION_EXPIRED
+  condition:
+    kind: text_visible
+    text: session has expired
+    frame: legacy-main
+  message: The target application session expired.
+checkpoint:
+- kind: text_visible
+  text: Savings Account
+  frame: legacy-main

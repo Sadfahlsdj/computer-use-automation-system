@@ -1,0 +1,14 @@
+{"capability_id": "discovered.member-workflow", "event": "run_started", "inputs": {"member_id": "[REDACTED]"}, "timestamp": "2026-09-10T19:50:42.626185+00:00"}
+{"action": "navigate", "event": "step_started", "step_id": "open-target", "timestamp": "2026-09-10T19:50:42.626704+00:00"}
+{"event": "step_completed", "step_id": "open-target", "timestamp": "2026-09-10T19:50:42.723759+00:00"}
+{"action": "fill", "event": "step_started", "step_id": "discovered-00", "timestamp": "2026-09-10T19:50:42.760855+00:00"}
+{"event": "step_completed", "step_id": "discovered-00", "timestamp": "2026-09-10T19:50:42.817410+00:00"}
+{"action": "click", "event": "step_started", "step_id": "discovered-02", "timestamp": "2026-09-10T19:50:42.822848+00:00"}
+{"event": "step_completed", "step_id": "discovered-02", "timestamp": "2026-09-10T19:50:43.159276+00:00"}
+{"action": "click", "event": "step_started", "step_id": "discovered-03", "timestamp": "2026-09-10T19:50:43.179292+00:00"}
+{"event": "step_completed", "step_id": "discovered-03", "timestamp": "2026-09-10T19:50:43.492799+00:00"}
+{"action": "extract", "event": "step_started", "step_id": "discovered-04", "timestamp": "2026-09-10T19:50:43.516360+00:00"}
+{"event": "step_completed", "step_id": "discovered-04", "timestamp": "2026-09-10T19:50:43.536807+00:00"}
+{"action": "extract", "event": "step_started", "step_id": "discovered-05", "timestamp": "2026-09-10T19:50:43.543629+00:00"}
+{"event": "step_completed", "step_id": "discovered-05", "timestamp": "2026-09-10T19:50:43.551497+00:00"}
+{"event": "run_completed", "outputs": {"balance": 12345.67, "member_status": "Active"}, "timestamp": "2026-09-10T19:50:43.559145+00:00"}

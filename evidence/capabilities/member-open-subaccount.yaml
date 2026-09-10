@@ -1,0 +1,102 @@
+schema_version: "1.0"
+capability_id: member.open-subaccount
+capability_version: 1.0.0
+title: Open a member sub-account
+description: Reach the synthetic account-creation confirmation and require operator approval.
+risk: irreversible
+target_product: northstar-core-training
+inputs:
+  member_id:
+    type: string
+    description: Five-digit synthetic member identifier.
+    pattern: "^[0-9]{5}$"
+    sensitive: true
+  nickname:
+    type: string
+    description: Nickname for the synthetic sub-account.
+    sensitive: false
+outputs: {}
+steps:
+  - kind: navigate
+    id: open-console
+    url: http://127.0.0.1:8000/demo
+    risk: read_only
+  - kind: fill
+    id: enter-member-id
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: label
+          value: Member Number
+        - kind: css
+          selector: input[name="member_id"]
+    value: "{{ inputs.member_id }}"
+    sensitive: true
+    risk: reversible
+  - kind: click
+    id: search-records
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: button
+          name: Search Records
+    risk: reversible
+  - kind: click
+    id: open-member
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: link
+          name: Open Member
+    risk: reversible
+  - kind: click
+    id: open-new-subaccount
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: link
+          name: Open New Sub-Account
+    risk: reversible
+  - kind: fill
+    id: enter-nickname
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: label
+          value: Nickname
+        - kind: css
+          selector: input[name="nickname"]
+    value: "{{ inputs.nickname }}"
+    risk: reversible
+  - kind: click
+    id: review-account
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: button
+          name: Review
+    risk: reversible
+  - kind: click
+    id: create-account
+    target:
+      frame: legacy-main
+      candidates:
+        - kind: role
+          role: button
+          name: Create Account
+    risk: irreversible
+business_outcomes:
+  - code: MEMBER_NOT_FOUND
+    condition:
+      kind: text_visible
+      text: No member found
+      frame: legacy-main
+    message: No member exists for the supplied identifier.
+checkpoint:
+  - kind: text_visible
+    text: Confirmation
+    frame: legacy-main
