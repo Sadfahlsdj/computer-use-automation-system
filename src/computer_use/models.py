@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -177,6 +177,7 @@ class Observation(StrictModel):
     title: str
     text: str
     interactive_elements: list[dict[str, Any]]
+    extractable_elements: list[dict[str, Any]] = Field(default_factory=list)
     screenshot_path: str | None = None
 
 
@@ -187,3 +188,24 @@ class DiscoveryDecision(StrictModel):
     value: str | None = None
     url: str | None = None
     output: str | None = None
+
+    @model_validator(mode="after")
+    def require_action_fields(self) -> DiscoveryDecision:
+        missing: list[str] = []
+        if self.kind == "navigate" and not self.url:
+            missing.append("url")
+        if self.kind == "fill":
+            if self.target is None:
+                missing.append("target")
+            if self.value is None:
+                missing.append("value")
+        if self.kind == "click" and self.target is None:
+            missing.append("target")
+        if self.kind == "extract":
+            if self.target is None:
+                missing.append("target")
+            if not self.output:
+                missing.append("output")
+        if missing:
+            raise ValueError(f"{self.kind} decisions require: {', '.join(missing)}")
+        return self

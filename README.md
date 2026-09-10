@@ -31,7 +31,9 @@ In one terminal, keep `cua serve` running. In another, activate the virtual envi
 Run deterministic replay with a known synthetic member:
 
 ```bash
-cua replay evidence/capabilities/member-read-savings.yaml --input member_id=10001
+cua replay \
+  evidence/capabilities/discovered-success-2026-09-10T19-43-39.311729Z.yaml \
+  --input member_id=10001
 ```
 
 Exercise the legitimate not-found outcome:
@@ -45,9 +47,10 @@ Run genuine LLM-driven discovery:
 ```bash
 cp .env.example .env
 # Edit .env and set OPENROUTER_API_KEY.
+# With the current testing site, member 99999 will always return member not found
 cua discover \
-  --goal 'Look up member 99999 and return the savings balance and member status' \
-  --input member_id=99999 \
+  --goal 'Look up member 10001 and return the savings balance and member status' \
+  --input member_id=10001 \
   --output evidence/capabilities/discovered.yaml
 ```
 
@@ -57,7 +60,11 @@ For example, `OPENROUTER_PROVIDER=nex-agi` and `OPENROUTER_MODEL=nex-n2.5-pro:fr
 
 Discovery prints timestamped progress for browser startup, page observations, OpenRouter request attempts and elapsed time, validation retries, browser actions, checkpoint verification, and artifact saving. Input values and API keys are not included in these messages.
 
+Each OpenRouter request is limited to 120 seconds by default and reports a heartbeat every 15 seconds while waiting. The SDK's hidden automatic retries are disabled. Set `OPENROUTER_REQUEST_TIMEOUT_SECONDS` in `.env` or pass `--request-timeout` to choose a different limit.
+
 Discovery checks known terminal business outcomes before requesting another model decision. The demo recognizes member-not-found, permission-denied, and session-expired pages and records those conditions in the generated capability. For example, discovering with member `99999` stops at `MEMBER_NOT_FOUND` instead of retrying the search until the step limit.
+
+The requested `--output` is treated as a filename base. Discovery appends the outcome and evidence timestamp so runs do not overwrite one another, for example `discovered-success-2026-09-10T19-20-00.000000Z.yaml` and `discovered-business-member-not-found-2026-09-10T19-21-00.000000Z.yaml`. Successful discovery also requires both `balance` and `member_status` extraction steps before accepting model completion.
 
 To demonstrate handoff, open the operator console and select **Start demo handoff**. Automation navigates to a confirmation screen, releases its control lease, and exposes the same live Playwright page. Click a field in the screenshot and continue typing while the screenshot has the yellow focus outline; mouse and keyboard input are routed to that page and audited. **Return control** transfers the lease back to automation and disables further operator input.
 

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 import typer
@@ -13,7 +14,11 @@ from playwright.async_api import async_playwright
 
 from computer_use.artifacts import load_artifact, save_artifact
 from computer_use.browser import launch_browser
-from computer_use.discovery import DiscoveryEngine, OpenRouterDecisionProvider
+from computer_use.discovery import (
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    DiscoveryEngine,
+    OpenRouterDecisionProvider,
+)
 from computer_use.evidence import EvidenceRecorder
 from computer_use.models import BusinessOutcomeSpec, PolicyConfig, TextCondition
 from computer_use.policy import PolicyEngine
@@ -105,6 +110,21 @@ def _demo_business_outcomes() -> list[BusinessOutcomeSpec]:
     ]
 
 
+def _artifact_output_path(
+    requested: Path,
+    evidence_id: str,
+    business_outcome_code: str | None,
+) -> Path:
+    outcome = "success"
+    if business_outcome_code:
+        normalized = re.sub(r"[^a-z0-9]+", "-", business_outcome_code.casefold()).strip("-")
+        outcome = f"business-{normalized}"
+    suffix = requested.suffix if requested.suffix in {".yaml", ".yml", ".json"} else ".yaml"
+    parent = requested.parent if requested.suffix else requested
+    stem = requested.stem if requested.suffix else "discovered"
+    return parent / f"{stem}-{outcome}-{evidence_id}{suffix}"
+
+
 @app.command()
 def serve(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None:
     """Serve the target application, APIs, and operator UI."""
@@ -145,7 +165,8 @@ async def _discover(
     model: str,
     api_key: str | None,
     headed: bool,
-) -> None:
+    request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+) -> Path:
     resolved_api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
     if not resolved_api_key:
         raise typer.BadParameter(
@@ -155,44 +176,82 @@ async def _discover(
     evidence = EvidenceRecorder(PROJECT_ROOT / "evidence", list(inputs.values()))
     model_id = _openrouter_model_id(provider, model)
     logging.getLogger(__name__).info(
-        "Starting discovery (model=%s, headed=%s, evidence=%s)",
+        "Starting discovery (model=%s, headed=%s, request_timeout=%.0fs, evidence=%s)",
         model_id,
         headed,
+        request_timeout_seconds,
         evidence.run_dir,
     )
+    saved_path: Path | None = None
     async with async_playwright() as playwright:
         logging.getLogger(__name__).info("Launching Playwright browser")
         browser = await launch_browser(playwright, headless=not headed)
         context = await browser.new_context()
         await context.tracing.start(screenshots=True, snapshots=True, sources=True)
         page = await context.new_page()
-        engine = DiscoveryEngine(
-            PlaywrightSurface(page),
-            _policy(),
-            evidence,
-            OpenRouterDecisionProvider(model_id, resolved_api_key),
-        )
-        artifact = await engine.run(
-            goal,
-            inputs,
-            "http://127.0.0.1:8000/demo",
-            "Savings Account",
-            "legacy-main",
-            _demo_business_outcomes(),
-        )
-        logging.getLogger(__name__).info("Saving discovered capability to %s", output)
-        save_artifact(artifact, output)
-        await context.tracing.stop(path=str(evidence.run_dir / "trace.zip"))
-        await browser.close()
+        try:
+            engine = DiscoveryEngine(
+                PlaywrightSurface(page),
+                _policy(),
+                evidence,
+                OpenRouterDecisionProvider(
+                    model_id,
+                    resolved_api_key,
+                    request_timeout_seconds=request_timeout_seconds,
+                ),
+            )
+            artifact = await engine.run(
+                goal,
+                inputs,
+                "http://127.0.0.1:8000/demo",
+                "Savings Account",
+                "legacy-main",
+                _demo_business_outcomes(),
+                {"balance", "member_status"},
+            )
+            saved_path = _artifact_output_path(
+                output,
+                evidence.evidence_id,
+                engine.business_outcome_code,
+            )
+            logging.getLogger(__name__).info("Saving discovered capability to %s", saved_path)
+            save_artifact(artifact, saved_path)
+            evidence.record(
+                "discovery_artifact_saved",
+                path=str(saved_path),
+                outcome=engine.business_outcome_code or "SUCCESS",
+            )
+        except Exception as error:
+            evidence.record(
+                "discovery_failed",
+                category=type(error).__name__,
+                error=str(error),
+            )
+            logging.getLogger(__name__).error(
+                "Discovery failed (%s); details recorded in %s",
+                type(error).__name__,
+                evidence.log_path,
+            )
+            raise
+        finally:
+            await context.tracing.stop(path=str(evidence.run_dir / "trace.zip"))
+            await browser.close()
     logging.getLogger(__name__).info("Discovery finished successfully")
-    typer.echo(f"Saved discovered capability to {output}")
+    if saved_path is None:
+        raise RuntimeError("Discovery completed without saving an artifact")
+    typer.echo(f"Saved discovered capability to {saved_path}")
+    return saved_path
 
 
 @app.command()
 def discover(
     goal: str = typer.Option(..., "--goal"),
     input: list[str] = typer.Option([], "--input", "-i"),
-    output: Path = typer.Option(Path("evidence/capabilities/discovered.yaml"), "--output"),
+    output: Path = typer.Option(
+        Path("evidence/capabilities/discovered.yaml"),
+        "--output",
+        help="Artifact filename base; outcome and timestamp are appended",
+    ),
     provider: str = typer.Option(
         DEFAULT_DISCOVERY_PROVIDER,
         "--provider",
@@ -212,6 +271,13 @@ def discover(
         help="OpenRouter API key (prefer the OPENROUTER_API_KEY environment variable)",
     ),
     headed: bool = typer.Option(False, "--headed"),
+    request_timeout: float = typer.Option(
+        DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        "--request-timeout",
+        envvar="OPENROUTER_REQUEST_TIMEOUT_SECONDS",
+        min=1,
+        help="Maximum seconds to wait for each OpenRouter response",
+    ),
 ) -> None:
     """Run genuine LLM-guided discovery and save the resulting artifact."""
     _configure_discovery_logging()
@@ -224,6 +290,7 @@ def discover(
             model,
             api_key,
             headed,
+            request_timeout,
         )
     )
 

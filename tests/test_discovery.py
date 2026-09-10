@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from computer_use.discovery import DiscoveryEngine
+from computer_use.discovery import DiscoveryEngine, _infer_single_interactive_frame
 from computer_use.errors import TargetNotFound
 from computer_use.evidence import EvidenceRecorder
 from computer_use.models import (
@@ -66,6 +66,74 @@ class NotFoundSurface(StaleTargetSurface):
         return condition.kind == "text_visible" and condition.text == "No member found"
 
 
+class AccountSurface(StaleTargetSurface):
+    async def click(self, target: TargetSpec, timeout_ms: int) -> None:
+        return None
+
+    async def extract(self, target: TargetSpec, timeout_ms: int) -> str:
+        candidate = target.candidates[0]
+        if isinstance(candidate, CssLocator) and candidate.selector == "#savings-balance":
+            return "$12,345.67"
+        return "Active"
+
+    async def condition_met(self, condition: Condition) -> bool:
+        return condition.kind == "text_visible" and condition.text == "Savings Account"
+
+    async def observe(self, screenshot_path: Path | None = None) -> Observation:
+        return Observation(
+            url=self.url,
+            title="Member Detail",
+            text="Status Active Savings Account Current Balance $12,345.67",
+            interactive_elements=[],
+            extractable_elements=[
+                {
+                    "tag": "td",
+                    "id": "member-status",
+                    "text": "Active",
+                    "frame": "legacy-main",
+                },
+                {
+                    "tag": "td",
+                    "id": "savings-balance",
+                    "text": "$12,345.67",
+                    "frame": "legacy-main",
+                },
+            ],
+        )
+
+
+class ExtractThenCompleteProvider:
+    def __init__(self) -> None:
+        self.observations: list[dict[str, object]] = []
+
+    async def decide(self, goal: str, observation: dict[str, object]) -> DiscoveryDecision:
+        self.observations.append(observation)
+        call = len(self.observations)
+        if call == 1:
+            return DiscoveryDecision(kind="complete", reason="Page is visible")
+        if call == 2:
+            return DiscoveryDecision(
+                kind="extract",
+                reason="Read balance",
+                target=TargetSpec(
+                    frame="legacy-main",
+                    candidates=[CssLocator(kind="css", selector="#savings-balance")],
+                ),
+                output="balance",
+            )
+        if call == 3:
+            return DiscoveryDecision(
+                kind="extract",
+                reason="Read status",
+                target=TargetSpec(
+                    frame="legacy-main",
+                    candidates=[CssLocator(kind="css", selector="#member-status")],
+                ),
+                output="member_status",
+            )
+        return DiscoveryDecision(kind="complete", reason="Required outputs captured")
+
+
 async def test_discovery_reobserves_after_target_disappears(tmp_path: Path) -> None:
     provider = StaleThenCompleteProvider()
     evidence = EvidenceRecorder(tmp_path)
@@ -117,3 +185,64 @@ async def test_discovery_stops_before_model_call_for_business_outcome(tmp_path: 
     assert "discovery_business_outcome" in log
     assert "MEMBER_NOT_FOUND" in log
     assert "99999" not in log
+
+
+def test_discovery_infers_only_available_interactive_frame() -> None:
+    decision = DiscoveryDecision(
+        kind="fill",
+        reason="Enter member number",
+        target=TargetSpec(
+            candidates=[CssLocator(kind="css", selector="#member-number")]
+        ),
+        value="10001",
+    )
+    observation = {
+        "interactive_elements": [
+            {
+                "tag": "input",
+                "name": "Member Number",
+                "frame": "legacy-main",
+            },
+            {
+                "tag": "button",
+                "name": "Search Records",
+                "frame": "legacy-main",
+            },
+        ]
+    }
+
+    inferred = _infer_single_interactive_frame(decision, observation)
+
+    assert inferred == "legacy-main"
+    assert decision.target is not None
+    assert decision.target.frame == "legacy-main"
+
+
+async def test_discovery_captures_required_outputs_before_completion(tmp_path: Path) -> None:
+    provider = ExtractThenCompleteProvider()
+    evidence = EvidenceRecorder(tmp_path)
+    engine = DiscoveryEngine(AccountSurface(), default_policy(), evidence, provider)
+
+    artifact = await engine.run(
+        "Read member balance and status",
+        {"member_id": "10001"},
+        "http://127.0.0.1:8000/demo",
+        "Savings Account",
+        "legacy-main",
+        required_outputs={"balance", "member_status"},
+    )
+
+    assert set(artifact.outputs) == {"balance", "member_status"}
+    assert artifact.outputs["balance"].type == "money"
+    extract_steps = [step for step in artifact.steps if step.kind == "extract"]
+    assert [step.output for step in extract_steps] == ["balance", "member_status"]
+    assert extract_steps[0].transform == "usd"
+    assert provider.observations[0]["discovery_progress"] == {
+        "completed_actions": ["navigate"],
+        "captured_outputs": [],
+        "required_outputs": ["balance", "member_status"],
+    }
+    assert provider.observations[2]["discovery_progress"]["captured_outputs"] == [
+        "balance"
+    ]
+    assert "discovery_premature_completion" in evidence.log_path.read_text()

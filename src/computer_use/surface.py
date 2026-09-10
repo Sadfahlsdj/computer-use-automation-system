@@ -123,7 +123,17 @@ class PlaywrightSurface:
                 type: e.getAttribute('type')
             }))"""
         )
+        extractable = await self.page.locator("[id], h1, h2, h3, th, td").evaluate_all(
+            """els => els.filter(e => e.offsetParent !== null && e.innerText?.trim())
+                .slice(0, 150).map((e, i) => ({
+                    ref: `top-value-${i}`,
+                    tag: e.tagName.toLowerCase(),
+                    id: e.id || null,
+                    text: e.innerText.trim().slice(0, 500)
+                }))"""
+        )
         frame_elements: list[dict[str, object]] = []
+        frame_extractable: list[dict[str, object]] = []
         frame_text: list[str] = []
         for frame in self.page.frames:
             if frame == self.page.main_frame:
@@ -144,6 +154,18 @@ class PlaywrightSurface:
                 for item in items:
                     item["frame"] = frame.name
                 frame_elements.extend(items)
+                values = await frame.locator("[id], h1, h2, h3, th, td").evaluate_all(
+                    """els => els.filter(e => e.offsetParent !== null && e.innerText?.trim())
+                        .slice(0, 150).map((e, i) => ({
+                            ref: `frame-value-${i}`,
+                            tag: e.tagName.toLowerCase(),
+                            id: e.id || null,
+                            text: e.innerText.trim().slice(0, 500)
+                        }))"""
+                )
+                for value in values:
+                    value["frame"] = frame.name
+                frame_extractable.extend(values)
                 frame_text.append(f"[frame={frame.name}]\n{(await frame.locator('body').inner_text())[:6000]}")
             except Exception:
                 continue
@@ -152,5 +174,6 @@ class PlaywrightSurface:
             title=await self.page.title(),
             text=(await self.page.locator("body").inner_text())[:8_000] + "\n" + "\n".join(frame_text),
             interactive_elements=[*elements, *frame_elements],
+            extractable_elements=[*extractable, *frame_extractable],
             screenshot_path=str(screenshot_path) if screenshot_path else None,
         )
