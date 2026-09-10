@@ -69,9 +69,7 @@ The requested `--output` is treated as a filename base. Discovery appends the ou
 To demonstrate an integrated replay handoff, keep `cua serve` running and execute:
 
 ```bash
-cua replay evidence/capabilities/member-open-subaccount.yaml \
-  --input member_id=10001 \
-  --input nickname=Vacation
+cua replay evidence/capabilities/member-open-subaccount.yaml --input member_id=10001 --input nickname=Vacation
 ```
 
 Replay stops before the synthetic irreversible `create-account` step and prints a direct operator-console URL on port 8001. Open that URL, inspect the same live Playwright page, and select **Approve and return control**; that explicit action authorizes replay to execute the named step. For stuck-state interventions, the operator may manipulate the page before selecting **Return control**, after which automation retries or rechecks the blocked operation. All human actions are recorded in the run's `events.jsonl`. The operator bridge starts only when needed and stops when the CLI run finishes. The default wait is ten minutes; `--handoff-timeout` and `--handoff-port` are configurable.
